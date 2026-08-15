@@ -1,0 +1,93 @@
+rules_version = '2';
+
+// *** DRAFT ONLY — NOT DEPLOYED ***
+// Per the migration brief's checkpoint #2: this file must be shown to and
+// approved by the shop owner before it is ever deployed to the live
+// "zeeshan-medical-store" Firebase project with `firebase deploy --only
+// firestore:rules`. Nothing in this repo/session has deployed it. The
+// project's currently-live rules (whatever they were left as when the
+// Firestore database was created) are unaffected by this file's existence.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Single fixed shop — this is a one-store app, not multi-tenant SaaS.
+    // Everything the app reads/writes lives under this one document tree.
+    match /shops/{shopId} {
+
+      // A request is from an authorized device if and only if:
+      //   1. It used Firebase Anonymous Auth (request.auth != null), AND
+      //   2. Its anonymous UID has a matching doc in allowedDevices.
+      // Registering or de-registering a phone = adding/removing a doc in
+      // the Firestore console's data view under allowedDevices — no rules
+      // redeploy needed for that day-to-day task, only for changing this
+      // logic itself.
+      function isAuthorizedDevice() {
+        return request.auth != null &&
+          exists(/databases/$(database)/documents/shops/$(shopId)/allowedDevices/$(request.auth.uid));
+      }
+
+      allow read, write: if isAuthorizedDevice();
+
+      // The allowlist itself. A brand-new, not-yet-registered phone signs in
+      // anonymously and gets a real UID, but can't read anything yet
+      // (including this collection) until that UID is added here manually —
+      // this is the expected, intentional behavior for onboarding a new
+      // device, not a bug.
+      match /allowedDevices/{uid} {
+        allow read: if isAuthorizedDevice();
+        // Never written by the app itself — only ever added/removed by hand
+        // via the Firebase console. If a client bug ever tried to write
+        // here, it must fail.
+        allow write: if false;
+      }
+
+      match /customers/{customerId} {
+        allow read: if isAuthorizedDevice();
+        allow create, update: if isAuthorizedDevice();
+        // No real document delete from the client, ever. The app's only
+        // supported deletion path is the soft-delete flag
+        // (CustomerDoc.deleted = true) — see firestore-schema.ts. This rule
+        // makes that an enforced invariant, not just a client-code
+        // convention: even a future client bug that tried to hard-delete a
+        // customer would be rejected here, which is what actually closes
+        // the audit's Risk #2 ("deleted item comes back from the dead" /
+        // "delete silently loses a concurrent offline edit") at the layer
+        // that matters.
+        allow delete: if false;
+
+        match /entries/{entryId} {
+          allow read: if isAuthorizedDevice();
+          allow create, update: if isAuthorizedDevice();
+          allow delete: if false; // same reasoning as customers, above
+        }
+      }
+
+      match /history/{historyId} {
+        // History is an append-only activity log — created and read, never
+        // edited or deleted by the app.
+        allow read: if isAuthorizedDevice();
+        allow create: if isAuthorizedDevice();
+        allow update, delete: if false;
+      }
+
+      match /settings/{settingsId} {
+        allow read, write: if isAuthorizedDevice();
+      }
+
+      // Diagnostics collection used only by scripts/phase1-smoke-test.mjs —
+      // fully open to any authorized device, never read by the real app.
+      // Kept isolated under its own path so a smoke test can never touch
+      // real financial data even by mistake.
+      match /_diagnostics/{testId} {
+        allow read, write: if isAuthorizedDevice();
+      }
+    }
+
+    // Everything else in the project: default-deny. There should never be
+    // any Firestore data for this app outside the shops/{shopId} tree above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

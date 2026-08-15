@@ -78,14 +78,7 @@ export function getFirebase(): FirebaseServices | null {
   if (typeof window === "undefined") return null;
 
   if (!app) {
-    const {
-      apiKey,
-      authDomain,
-      projectId,
-      storageBucket,
-      messagingSenderId,
-      appId,
-    } = rawConfig;
+    const { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId } = rawConfig;
 
     if (!apiKey || !authDomain || !projectId || !storageBucket || !messagingSenderId || !appId) {
       console.error(
