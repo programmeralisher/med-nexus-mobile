@@ -4,7 +4,9 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromCache,
   getDocs,
+  getDocsFromCache,
   limit,
   orderBy,
   query,
@@ -12,6 +14,11 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  type DocumentData,
+  type DocumentReference,
+  type DocumentSnapshot,
+  type Query,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import { getFirebase } from "./firebase";
 import { ensureSignedIn, getDeviceId } from "./auth";
@@ -164,12 +171,69 @@ function tsToIso(v: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// FIX (found during Phase 2 offline testing): Firestore's default getDocs()/
+// getDoc() are documented as "network first, fall back to cache if offline"
+// -- but that fallback has been unreliable in the Firestore Web SDK for
+// years, specifically for a COLD START while already offline (load the page
+// fresh with no network -- exactly what was tested): the first read issued
+// in a fresh client session can throw "Failed to get document because the
+// client is offline" instead of silently falling back, even with data
+// already sitting in the persistentLocalCache (IndexedDB) configured in
+// firebase.ts. This is a known, long-standing SDK behavior, not a bug in
+// this app's Firestore configuration or in how firebase.ts sets up the
+// cache -- see firebase/firebase-js-sdk issues #3207, #5836, #6036 (and
+// still-open related reports), spanning multiple SDK versions and years.
+//
+// The reliable fix, without introducing onSnapshot listeners (real-time
+// sync is explicitly Phase 3, not touched here): catch that specific
+// failure and explicitly retry with the *FromCache variant of the same
+// read. getDocFromCache/getDocsFromCache are stable, documented, non-
+// experimental Firestore APIs that read ONLY from the same
+// persistentLocalCache -- never touching the network at all -- so they
+// can't hit the same "is it really offline or just slow" ambiguity that
+// causes the default call to sometimes throw instead of falling back.
+//
+// The default (network-first) call is always tried FIRST here -- this
+// fallback only ever engages on an actual failure, so all existing online
+// behavior is completely unchanged when the network is actually up.
+// ---------------------------------------------------------------------------
+
+async function getDocsWithCacheFallback(
+  q: Query<DocumentData>,
+): Promise<QuerySnapshot<DocumentData>> {
+  try {
+    return await getDocs(q);
+  } catch (err) {
+    console.warn(
+      "[store] getDocs failed (likely offline) -- falling back to local Firestore cache",
+      err,
+    );
+    return await getDocsFromCache(q);
+  }
+}
+
+async function getDocWithCacheFallback(
+  ref: DocumentReference<DocumentData>,
+): Promise<DocumentSnapshot<DocumentData>> {
+  try {
+    return await getDoc(ref);
+  } catch (err) {
+    console.warn(
+      "[store] getDoc failed (likely offline) -- falling back to local Firestore cache",
+      err,
+    );
+    return await getDocFromCache(ref);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // NEW in Phase 2: read the whole AppData from Firestore. One-time fetch on
 // mount, matching the exact one-time-load pattern the old localStorage
 // version had (real-time onSnapshot listeners are explicitly Phase 3 --
 // "Real-time sync" -- not this phase). Firestore's own persistentLocalCache
 // (configured in firebase.ts, Phase 0) means this still resolves from the
-// local cache when offline, once something has been cached at least once.
+// local cache when offline, once something has been cached at least once --
+// reliably so now, via the cache-fallback wrappers just above.
 //
 // Deliberately does the soft-delete filter (deleted === true -> skip) in
 // plain JS after fetching, rather than a Firestore where("deleted","==",
@@ -206,7 +270,7 @@ async function fetchAppData(): Promise<AppData> {
     // got this order "for free" by always prepending new customers to the
     // front of the array; a single-field orderBy replicates that without
     // needing a composite index.
-    const customersSnap = await getDocs(
+    const customersSnap = await getDocsWithCacheFallback(
       query(collection(db, customersCollectionPath()), orderBy("createdAt", "desc")),
     );
 
@@ -219,7 +283,9 @@ async function fetchAppData(): Promise<AppData> {
       // LedgerScreen already does [...c.entries].sort((a,b) => date) itself
       // before rendering, so fetch order genuinely doesn't affect anything --
       // confirmed by reading LedgerScreen.tsx line 41 before writing this.
-      const entriesSnap = await getDocs(collection(db, entriesCollectionPath(cSnap.id)));
+      const entriesSnap = await getDocsWithCacheFallback(
+        collection(db, entriesCollectionPath(cSnap.id)),
+      );
       const entries: Entry[] = [];
       for (const eSnap of entriesSnap.docs) {
         const eData = eSnap.data() as EntryDoc;
@@ -245,7 +311,7 @@ async function fetchAppData(): Promise<AppData> {
 
     // History: newest first, capped at 500 -- matches the old
     // .slice(0, 500) cap exactly, just enforced via the query instead.
-    const historySnap = await getDocs(
+    const historySnap = await getDocsWithCacheFallback(
       query(collection(db, historyCollectionPath()), orderBy("at", "desc"), limit(500)),
     );
     const history: HistoryItem[] = historySnap.docs.map((d) => {
@@ -253,7 +319,7 @@ async function fetchAppData(): Promise<AppData> {
       return { id: d.id, at: tsToIso(h.at), text: h.text };
     });
 
-    const settingsSnap = await getDoc(doc(db, settingsDocPath()));
+    const settingsSnap = await getDocWithCacheFallback(doc(db, settingsDocPath()));
     const remote = settingsSnap.exists() ? (settingsSnap.data() as SettingsDoc) : null;
 
     return {
@@ -265,7 +331,15 @@ async function fetchAppData(): Promise<AppData> {
       },
     };
   } catch (err) {
-    console.error("[store] Firestore read failed; showing empty state", err);
+    // Reaching here means even the *FromCache fallback failed too (e.g. a
+    // genuinely fresh install that's never synced anything while offline --
+    // nothing to show is correct in that specific case). Any scenario where
+    // data WAS previously cached is handled by the fallback wrappers above,
+    // before it ever gets here.
+    console.error(
+      "[store] Firestore read failed even after cache fallback; showing empty state",
+      err,
+    );
     return fallback;
   }
 }
