@@ -3,22 +3,15 @@ import {
   arrayUnion,
   collection,
   doc,
-  getDoc,
-  getDocFromCache,
-  getDocs,
-  getDocsFromCache,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
   Timestamp,
+  type Unsubscribe,
   updateDoc,
-  type DocumentData,
-  type DocumentReference,
-  type DocumentSnapshot,
-  type Query,
-  type QuerySnapshot,
 } from "firebase/firestore";
 import { getFirebase } from "./firebase";
 import { ensureSignedIn, getDeviceId } from "./auth";
@@ -171,177 +164,227 @@ function tsToIso(v: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// FIX (found during Phase 2 offline testing): Firestore's default getDocs()/
-// getDoc() are documented as "network first, fall back to cache if offline"
-// -- but that fallback has been unreliable in the Firestore Web SDK for
-// years, specifically for a COLD START while already offline (load the page
-// fresh with no network -- exactly what was tested): the first read issued
-// in a fresh client session can throw "Failed to get document because the
-// client is offline" instead of silently falling back, even with data
-// already sitting in the persistentLocalCache (IndexedDB) configured in
-// firebase.ts. This is a known, long-standing SDK behavior, not a bug in
-// this app's Firestore configuration or in how firebase.ts sets up the
-// cache -- see firebase/firebase-js-sdk issues #3207, #5836, #6036 (and
-// still-open related reports), spanning multiple SDK versions and years.
+// NEW in Phase 3: real-time sync via onSnapshot listeners, replacing Phase
+// 2's one-time getDocs()/getDoc() fetch. This supersedes and REMOVES the
+// Phase-2-fix cache-fallback wrappers (getDocsWithCacheFallback /
+// getDocWithCacheFallback) that used to live here -- they are no longer
+// needed, and for a good, source-verified reason, not just because
+// onSnapshot is "the Phase 3 thing to do":
 //
-// The reliable fix, without introducing onSnapshot listeners (real-time
-// sync is explicitly Phase 3, not touched here): catch that specific
-// failure and explicitly retry with the *FromCache variant of the same
-// read. getDocFromCache/getDocsFromCache are stable, documented, non-
-// experimental Firestore APIs that read ONLY from the same
-// persistentLocalCache -- never touching the network at all -- so they
-// can't hit the same "is it really offline or just slow" ambiguity that
-// causes the default call to sometimes throw instead of falling back.
+// onSnapshot listeners are documented, reliable-by-design cache-first reads.
+// Unlike a one-time getDocs()/getDoc() promise (which has to make a binary
+// "resolve or reject" decision and, per the bug found and fixed after Phase
+// 2, could unreliably throw instead of falling back on a cold start while
+// offline), a snapshot listener's whole purpose is to hand back whatever it
+// currently knows immediately -- cached data first if that's all that's
+// available -- and then push updates as the truth changes. There is no
+// equivalent "give up and reject" failure mode for the ordinary offline
+// case, so the exact bug fixed after Phase 2 structurally cannot recur here.
+// (The listener's error callback below is reserved for genuine, different
+// failures -- e.g. a permission-denied from security rules -- not ordinary
+// offline reads.)
 //
-// The default (network-first) call is always tried FIRST here -- this
-// fallback only ever engages on an actual failure, so all existing online
-// behavior is completely unchanged when the network is actually up.
+// This directly delivers the brief's real-time requirement: two customers
+// subcollections are independent Firestore documents (per the schema
+// finalized in Phase 1), so if Phone A and Phone B are both offline and add
+// different entries for the same customer, each queues locally; whichever
+// comes online first flushes to Firestore; the OTHER phone's entries
+// listener for that same customer then fires again with the merged result
+// the next time it's online -- no custom merge/diff code needed, no
+// overwrite risk, because neither phone was ever writing to a shared array.
+//
+// Soft-delete filtering stays client-side (deleted === true -> skip) for the
+// same reason as before: a where("deleted","==",false) clause combined with
+// the orderBy() below would need a composite index, and at this app's scale
+// (a few hundred customers at most, dozens of entries each) filtering the
+// small number of soft-deleted docs out client-side costs nothing
+// meaningful.
 // ---------------------------------------------------------------------------
 
-async function getDocsWithCacheFallback(
-  q: Query<DocumentData>,
-): Promise<QuerySnapshot<DocumentData>> {
-  try {
-    return await getDocs(q);
-  } catch (err) {
-    console.warn(
-      "[store] getDocs failed (likely offline) -- falling back to local Firestore cache",
-      err,
-    );
-    return await getDocsFromCache(q);
-  }
-}
+/**
+ * Sets up every real-time listener useAppStore() needs (customers, a
+ * dynamically-managed fan-out of one entries listener per customer, history,
+ * settings) and wires them into the given React state setters. Returns a
+ * single cleanup function that tears down every listener -- call it from the
+ * owning effect's cleanup.
+ *
+ * Structured as a synchronous function that kicks off async setup
+ * internally (rather than an async function itself) because a React effect
+ * callback must return its cleanup function synchronously; the `cancelled`
+ * flag guards every callback against firing after cleanup has already run,
+ * covering the case where the component unmounts (or this effect re-runs)
+ * before the async sign-in/listener-setup has finished.
+ */
+function subscribeAppData(
+  setData: React.Dispatch<React.SetStateAction<AppData>>,
+  setReady: React.Dispatch<React.SetStateAction<boolean>>,
+): () => void {
+  let cancelled = false;
+  const entriesUnsubs = new Map<string, Unsubscribe>();
+  let customersUnsub: Unsubscribe | null = null;
+  let historyUnsub: Unsubscribe | null = null;
+  let settingsUnsub: Unsubscribe | null = null;
 
-async function getDocWithCacheFallback(
-  ref: DocumentReference<DocumentData>,
-): Promise<DocumentSnapshot<DocumentData>> {
-  try {
-    return await getDoc(ref);
-  } catch (err) {
-    console.warn(
-      "[store] getDoc failed (likely offline) -- falling back to local Firestore cache",
-      err,
-    );
-    return await getDocFromCache(ref);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// NEW in Phase 2: read the whole AppData from Firestore. One-time fetch on
-// mount, matching the exact one-time-load pattern the old localStorage
-// version had (real-time onSnapshot listeners are explicitly Phase 3 --
-// "Real-time sync" -- not this phase). Firestore's own persistentLocalCache
-// (configured in firebase.ts, Phase 0) means this still resolves from the
-// local cache when offline, once something has been cached at least once --
-// reliably so now, via the cache-fallback wrappers just above.
-//
-// Deliberately does the soft-delete filter (deleted === true -> skip) in
-// plain JS after fetching, rather than a Firestore where("deleted","==",
-// false) clause -- a where() clause combined with the orderBy() below would
-// need a composite index; filtering client-side avoids that entirely for
-// now. At this app's scale (audit estimate: a few hundred customers at most,
-// dozens of entries each) fetching the small number of soft-deleted docs
-// too and discarding them client-side is not a meaningful cost.
-// ---------------------------------------------------------------------------
-
-async function fetchAppData(): Promise<AppData> {
-  const localTheme = loadLocalTheme();
-  const fallback: AppData = {
-    ...defaultData,
-    settings: { ...defaultData.settings, theme: localTheme },
-  };
-
-  const services = getFirebase();
-  if (!services) return fallback; // SSR, or missing VITE_FIREBASE_* config
-
-  try {
-    await ensureSignedIn();
-  } catch (err) {
-    console.error("[store] Firebase sign-in failed; showing empty state", err);
-    return fallback;
+  function showEmptyFallback() {
+    if (cancelled) return;
+    setData({ ...defaultData, settings: { ...defaultData.settings, theme: loadLocalTheme() } });
+    setReady(true);
   }
 
-  const { db } = services;
-
-  try {
-    // Customers, newest-created first -- CreditsScreen and ReportsScreen both
-    // render store.data.customers directly with no re-sort of their own, so
-    // this order has to be right at the source. The old localStorage version
-    // got this order "for free" by always prepending new customers to the
-    // front of the array; a single-field orderBy replicates that without
-    // needing a composite index.
-    const customersSnap = await getDocsWithCacheFallback(
-      query(collection(db, customersCollectionPath()), orderBy("createdAt", "desc")),
-    );
-
-    const customers: Customer[] = [];
-    for (const cSnap of customersSnap.docs) {
-      const cData = cSnap.data() as CustomerDoc;
-      if (cData.deleted) continue;
-
-      // Entries subcollection for this one customer. No orderBy needed here:
-      // LedgerScreen already does [...c.entries].sort((a,b) => date) itself
-      // before rendering, so fetch order genuinely doesn't affect anything --
-      // confirmed by reading LedgerScreen.tsx line 41 before writing this.
-      const entriesSnap = await getDocsWithCacheFallback(
-        collection(db, entriesCollectionPath(cSnap.id)),
-      );
-      const entries: Entry[] = [];
-      for (const eSnap of entriesSnap.docs) {
-        const eData = eSnap.data() as EntryDoc;
-        if (eData.deleted) continue;
-        entries.push({
-          id: eSnap.id,
-          type: eData.type,
-          description: eData.description,
-          amount: paisaToRupees(eData.amountPaisa),
-          date: eData.date,
-        });
-      }
-
-      customers.push({
-        id: cSnap.id,
-        name: cData.name,
-        contact: cData.contact,
-        entries,
-        paidMonths: cData.paidMonths ?? [],
-        updatedAt: tsToIso(cData.updatedAt),
-      });
+  async function start() {
+    const services = getFirebase();
+    if (!services) {
+      showEmptyFallback(); // SSR, or missing VITE_FIREBASE_* config
+      return;
     }
 
-    // History: newest first, capped at 500 -- matches the old
-    // .slice(0, 500) cap exactly, just enforced via the query instead.
-    const historySnap = await getDocsWithCacheFallback(
-      query(collection(db, historyCollectionPath()), orderBy("at", "desc"), limit(500)),
-    );
-    const history: HistoryItem[] = historySnap.docs.map((d) => {
-      const h = d.data() as HistoryDoc;
-      return { id: d.id, at: tsToIso(h.at), text: h.text };
-    });
+    try {
+      await ensureSignedIn();
+    } catch (err) {
+      console.error("[store] Firebase sign-in failed; showing empty state", err);
+      showEmptyFallback();
+      return;
+    }
 
-    const settingsSnap = await getDocWithCacheFallback(doc(db, settingsDocPath()));
-    const remote = settingsSnap.exists() ? (settingsSnap.data() as SettingsDoc) : null;
+    if (cancelled) return;
+    const { db } = services;
 
-    return {
-      customers,
-      history,
-      settings: {
-        theme: localTheme, // device-local, never from Firestore -- see above
-        whatsapp: remote?.whatsapp ?? defaultData.settings.whatsapp,
+    // Customers listener. Also owns the dynamic fan-out of per-customer
+    // entries listeners: every time the customer LIST changes (a customer
+    // added, soft-deleted, or otherwise no longer matching), it reconciles
+    // which entries listeners should be active.
+    customersUnsub = onSnapshot(
+      query(collection(db, customersCollectionPath()), orderBy("createdAt", "desc")),
+      (snap) => {
+        if (cancelled) return;
+        const currentIds = new Set<string>();
+
+        // Customers, newest-created first -- CreditsScreen and ReportsScreen
+        // both render store.data.customers directly with no re-sort of
+        // their own, so this order has to be right at the source, same as
+        // Phase 2. Preserves each customer's already-known `entries` (owned
+        // by the separate per-customer listener below) rather than
+        // resetting them to [] on every customer-list change.
+        setData((d) => {
+          const nextCustomers: Customer[] = [];
+          for (const cSnap of snap.docs) {
+            const cData = cSnap.data() as CustomerDoc;
+            if (cData.deleted) continue;
+            currentIds.add(cSnap.id);
+            const existing = d.customers.find((c) => c.id === cSnap.id);
+            nextCustomers.push({
+              id: cSnap.id,
+              name: cData.name,
+              contact: cData.contact,
+              paidMonths: cData.paidMonths ?? [],
+              updatedAt: tsToIso(cData.updatedAt),
+              entries: existing?.entries ?? [],
+            });
+          }
+          return { ...d, customers: nextCustomers };
+        });
+
+        // Start an entries listener for any customer newly seen.
+        for (const id of currentIds) {
+          if (cancelled || entriesUnsubs.has(id)) continue;
+          const unsub = onSnapshot(
+            collection(db, entriesCollectionPath(id)),
+            (eSnap) => {
+              if (cancelled) return;
+              // No orderBy here: LedgerScreen already sorts by date itself
+              // before rendering (confirmed before writing this in Phase
+              // 2), so listener delivery order doesn't matter.
+              setData((d) => ({
+                ...d,
+                customers: d.customers.map((c) => {
+                  if (c.id !== id) return c;
+                  const entries: Entry[] = [];
+                  for (const ed of eSnap.docs) {
+                    const eData = ed.data() as EntryDoc;
+                    if (eData.deleted) continue;
+                    entries.push({
+                      id: ed.id,
+                      type: eData.type,
+                      description: eData.description,
+                      amount: paisaToRupees(eData.amountPaisa),
+                      date: eData.date,
+                    });
+                  }
+                  return { ...c, entries };
+                }),
+              }));
+            },
+            (err) => {
+              console.error("[store] entries listener error for customer", id, err);
+            },
+          );
+          entriesUnsubs.set(id, unsub);
+        }
+
+        // Stop listening to any customer no longer present (soft-deleted,
+        // or otherwise gone) -- without this, entries listeners would leak
+        // and keep firing for customers the UI no longer shows.
+        for (const [id, unsub] of entriesUnsubs) {
+          if (!currentIds.has(id)) {
+            unsub();
+            entriesUnsubs.delete(id);
+          }
+        }
+
+        setReady(true);
       },
-    };
-  } catch (err) {
-    // Reaching here means even the *FromCache fallback failed too (e.g. a
-    // genuinely fresh install that's never synced anything while offline --
-    // nothing to show is correct in that specific case). Any scenario where
-    // data WAS previously cached is handled by the fallback wrappers above,
-    // before it ever gets here.
-    console.error(
-      "[store] Firestore read failed even after cache fallback; showing empty state",
-      err,
+      (err) => {
+        // Reserved for a genuine failure (e.g. permission-denied) -- see the
+        // block comment above for why the ordinary offline case doesn't
+        // reach here the way it could with the old one-time fetch.
+        console.error("[store] customers listener error; showing empty state", err);
+        showEmptyFallback();
+      },
     );
-    return fallback;
+
+    // History: newest first, capped at 500 -- same cap as Phase 2, now kept
+    // continuously up to date instead of only as of the last page load.
+    historyUnsub = onSnapshot(
+      query(collection(db, historyCollectionPath()), orderBy("at", "desc"), limit(500)),
+      (snap) => {
+        if (cancelled) return;
+        setData((d) => ({
+          ...d,
+          history: snap.docs.map((hd) => {
+            const h = hd.data() as HistoryDoc;
+            return { id: hd.id, at: tsToIso(h.at), text: h.text };
+          }),
+        }));
+      },
+      (err) => console.error("[store] history listener error", err),
+    );
+
+    // Settings: only `whatsapp` is remote/shared -- `theme` stays
+    // device-local, same reasoning as Phase 2.
+    settingsUnsub = onSnapshot(
+      doc(db, settingsDocPath()),
+      (snap) => {
+        if (cancelled) return;
+        const remote = snap.exists() ? (snap.data() as SettingsDoc) : null;
+        setData((d) => ({
+          ...d,
+          settings: { ...d.settings, whatsapp: remote?.whatsapp ?? d.settings.whatsapp },
+        }));
+      },
+      (err) => console.error("[store] settings listener error", err),
+    );
   }
+
+  void start();
+
+  return () => {
+    cancelled = true;
+    customersUnsub?.();
+    historyUnsub?.();
+    settingsUnsub?.();
+    for (const unsub of entriesUnsubs.values()) unsub();
+    entriesUnsubs.clear();
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -515,15 +558,7 @@ export function useAppStore() {
   dataRef.current = data;
 
   React.useEffect(() => {
-    let cancelled = false;
-    fetchAppData().then((d) => {
-      if (cancelled) return;
-      setData(d);
-      setReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
+    return subscribeAppData(setData, setReady);
   }, []);
 
   React.useEffect(() => {

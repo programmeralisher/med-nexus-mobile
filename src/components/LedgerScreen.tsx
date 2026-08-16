@@ -36,6 +36,17 @@ export function LedgerScreen({
   const [amount, setAmount] = React.useState("");
   const [period, setPeriod] = React.useState<Period>("monthly");
 
+  // Local, uncommitted edits for the inline description/amount inputs below.
+  // Keyed by entry id. While a draft exists for a field, the input shows the
+  // draft value instead of store.data's value -- this is what lets the user
+  // keep typing undisturbed even if a real-time update for a DIFFERENT field
+  // (or from another device) arrives mid-edit. The draft is committed to
+  // Firestore (via store.editEntry) on blur or Enter, then cleared, so the
+  // input reverts to reading directly from store.data again -- which by then
+  // already reflects the just-committed value optimistically.
+  const [descDrafts, setDescDrafts] = React.useState<Record<string, string>>({});
+  const [amountDrafts, setAmountDrafts] = React.useState<Record<string, string>>({});
+
   if (!customer) return null;
   const c: Customer = customer;
   const entries = [...c.entries].sort((a, b) => +new Date(a.date) - +new Date(b.date));
@@ -66,6 +77,32 @@ export function LedgerScreen({
     setPayAmount("");
     setPayNote("");
     setPayOpen(false);
+  };
+
+  // Committed on blur / Enter, not on every keystroke -- see the comment on
+  // descDrafts/amountDrafts above for why. Skips the Firestore write
+  // entirely if the value didn't actually change (e.g. the user just
+  // clicked into the field and back out), rather than firing a no-op update
+  // on every blur.
+  const commitDescription = (entryId: string, value: string) => {
+    setDescDrafts((d) => {
+      const next = { ...d };
+      delete next[entryId];
+      return next;
+    });
+    const original = c.entries.find((x) => x.id === entryId)?.description;
+    if (value !== original) store.editEntry(c.id, entryId, { description: value });
+  };
+
+  const commitAmount = (entryId: string, value: string) => {
+    setAmountDrafts((d) => {
+      const next = { ...d };
+      delete next[entryId];
+      return next;
+    });
+    const original = c.entries.find((x) => x.id === entryId)?.amount;
+    const next = Number(value) || 0;
+    if (next !== original) store.editEntry(c.id, entryId, { amount: next });
   };
 
   return (
@@ -141,10 +178,12 @@ export function LedgerScreen({
                 <td className="px-3 py-1.5">
                   <input
                     className="w-full rounded bg-transparent px-1 py-1 outline-none focus:bg-accent"
-                    value={e.description}
-                    onChange={(ev) =>
-                      store.editEntry(c.id, e.id, { description: ev.target.value })
-                    }
+                    value={descDrafts[e.id] ?? e.description}
+                    onChange={(ev) => setDescDrafts((d) => ({ ...d, [e.id]: ev.target.value }))}
+                    onBlur={(ev) => commitDescription(e.id, ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") ev.currentTarget.blur();
+                    }}
                   />
                 </td>
                 <td className="px-3 py-1.5 text-right">
@@ -153,15 +192,15 @@ export function LedgerScreen({
                       "w-24 rounded bg-transparent px-1 py-1 text-right outline-none focus:bg-accent " +
                       (e.type === "payment" ? "text-success" : "")
                     }
-                    value={e.amount}
+                    value={amountDrafts[e.id] ?? String(e.amount)}
                     inputMode="numeric"
-                    onChange={(ev) =>
-                      store.editEntry(c.id, e.id, { amount: Number(ev.target.value) || 0 })
-                    }
+                    onChange={(ev) => setAmountDrafts((d) => ({ ...d, [e.id]: ev.target.value }))}
+                    onBlur={(ev) => commitAmount(e.id, ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") ev.currentTarget.blur();
+                    }}
                   />
-                  {e.type === "payment" && (
-                    <span className="ml-1 text-xs text-success">paid</span>
-                  )}
+                  {e.type === "payment" && <span className="ml-1 text-xs text-success">paid</span>}
                 </td>
                 <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
                   {fmtDate(e.date)}
