@@ -85,6 +85,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      // NEW in Phase 5 (PWA, brief §7a): theme-color matches the app's own
+      // light-mode --primary CSS variable (converted from its actual OKLCH
+      // value, not guessed) -- this is what colors a desktop PWA's title
+      // bar / a mobile browser's UI chrome.
+      { name: "theme-color", content: "#007d71" },
     ],
     links: [
       {
@@ -92,6 +97,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      // NEW in Phase 5: manifest makes the app installable as a PWA (the
+      // brief's laptop/desktop target). apple-touch-icon is a small, cheap
+      // compatibility addition for iOS/iPadOS home-screen installs, using
+      // the same generated icon -- not a full iOS-specific PWA build,
+      // which the brief doesn't ask for (Android goes through Capacitor,
+      // §8, not this web PWA layer).
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
     ],
   }),
   shellComponent: RootShell,
@@ -116,6 +129,21 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // NEW in Phase 5 (PWA, brief §7a): register the app-shell service worker.
+  // useEffect guarantees this only ever runs client-side after hydration --
+  // same SSR-safety pattern already used for Firebase elsewhere in this
+  // migration (typeof window === "undefined" guards in firebase.ts) --
+  // service workers don't exist as a concept during SSR anyway, but the
+  // `"serviceWorker" in navigator` check below is kept as an explicit,
+  // self-documenting guard rather than relying solely on effects never
+  // running server-side.
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch((err) => console.error("[pwa] service worker registration failed", err));
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
