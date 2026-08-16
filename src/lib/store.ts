@@ -545,7 +545,29 @@ async function fsAddHistory(historyId: string, text: string) {
 // ---------------------------------------------------------------------------
 
 export function useAppStore() {
-  const [data, setData] = React.useState<AppData>(defaultData);
+  // BUG FIX: theme is device-local (never synced via Firestore, by design --
+  // see loadLocalTheme/saveLocalTheme above), and saving it always worked
+  // (setSettings calls saveLocalTheme on every theme change) -- but RESTORING
+  // it on a normal successful load did not. defaultData hardcodes theme to
+  // "light", and every onSnapshot listener in subscribeAppData only ever
+  // touches the fields it's actually responsible for (customers, history,
+  // whatsapp), correctly leaving `settings.theme` untouched on every update
+  // -- which is fine ONCE it starts correct, but nothing on the success path
+  // ever called loadLocalTheme() to seed it in the first place. Only the
+  // failure-path showEmptyFallback() did. Net effect: reloading always
+  // silently reverted to "light" regardless of what was saved.
+  //
+  // Fix: seed the theme from localStorage in the initial state itself, via
+  // useState's lazy-initializer form (a function, evaluated once on mount,
+  // before the first paint) -- not a separate effect, so there's no extra
+  // render/flash where the wrong theme is briefly shown before correcting.
+  // loadLocalTheme() already safely returns the default during SSR (guarded
+  // by `typeof window === "undefined"`), so this is SSR-safe unchanged.
+  // Touches zero Firestore/listener code -- purely local initial state.
+  const [data, setData] = React.useState<AppData>(() => ({
+    ...defaultData,
+    settings: { ...defaultData.settings, theme: loadLocalTheme() },
+  }));
   const [ready, setReady] = React.useState(false);
 
   // Always mirrors the latest rendered data, updated synchronously during
