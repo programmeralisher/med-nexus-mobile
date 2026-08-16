@@ -7,6 +7,7 @@ import { LedgerScreen } from "@/components/LedgerScreen";
 import { ReportsScreen } from "@/components/ReportsScreen";
 import { MessagesScreen } from "@/components/MessagesScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
+import { ManageCreditOwnersScreen } from "@/components/ManageCreditOwnersScreen";
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { BarChart3, MessageCircle, Settings, Stethoscope, Wallet } from "lucide-react";
@@ -39,6 +40,7 @@ function Index() {
   const [authed, setAuthed] = React.useState(false);
   const [tab, setTab] = React.useState<Tab>("dashboard");
   const [ledgerId, setLedgerId] = React.useState<string | null>(null);
+  const [manageOwnersOpen, setManageOwnersOpen] = React.useState(false);
 
   if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
 
@@ -58,6 +60,7 @@ function Index() {
             onClick={() => {
               setTab("dashboard");
               setLedgerId(null);
+              setManageOwnersOpen(false);
             }}
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
@@ -99,15 +102,20 @@ function Index() {
 
         {tab === "reports" && <ReportsScreen store={store} />}
         {tab === "messages" && <MessagesScreen store={store} />}
-        {tab === "settings" && (
-          <SettingsScreen
-            store={store}
-            onSignOut={() => {
-              setAuthed(false);
-              setTab("dashboard");
-            }}
-          />
-        )}
+        {tab === "settings" &&
+          (manageOwnersOpen ? (
+            <ManageCreditOwnersScreen store={store} onBack={() => setManageOwnersOpen(false)} />
+          ) : (
+            <SettingsScreen
+              store={store}
+              onManageOwners={() => setManageOwnersOpen(true)}
+              onSignOut={() => {
+                setAuthed(false);
+                setTab("dashboard");
+                setManageOwnersOpen(false);
+              }}
+            />
+          ))}
       </main>
 
       <nav className="sticky bottom-0 z-20 border-t border-border bg-card/95 backdrop-blur">
@@ -121,6 +129,7 @@ function Index() {
               onClick={() => {
                 setTab(t.id);
                 if (t.id !== "credits") setLedgerId(null);
+                if (t.id !== "settings") setManageOwnersOpen(false);
               }}
               className={
                 "flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium transition-colors " +

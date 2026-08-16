@@ -10,9 +10,17 @@ import {
 } from "@/components/ui/dialog";
 import { STORE_PASSWORD, balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
 import { downloadBackupPdf } from "@/lib/pdf";
-import { Download, History, LogOut, Moon, Sun, Trash2 } from "lucide-react";
+import { Download, History, LogOut, Moon, Sun, Trash2, UserCog } from "lucide-react";
 
-export function SettingsScreen({ store, onSignOut }: { store: Store; onSignOut: () => void }) {
+export function SettingsScreen({
+  store,
+  onManageOwners,
+  onSignOut,
+}: {
+  store: Store;
+  onManageOwners: () => void;
+  onSignOut: () => void;
+}) {
   const { settings } = store.data;
   const [wa, setWa] = React.useState(settings.whatsapp);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -41,15 +49,9 @@ export function SettingsScreen({ store, onSignOut }: { store: Store; onSignOut: 
         <Button
           variant="outline"
           className="h-11 w-full justify-start"
-          onClick={() =>
-            store.setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })
-          }
+          onClick={() => store.setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}
         >
-          {settings.theme === "dark" ? (
-            <Sun className="h-4 w-4" />
-          ) : (
-            <Moon className="h-4 w-4" />
-          )}
+          {settings.theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           Switch to {settings.theme === "dark" ? "light" : "dark"} theme
         </Button>
       </Section>
@@ -71,6 +73,12 @@ export function SettingsScreen({ store, onSignOut }: { store: Store; onSignOut: 
             Save
           </Button>
         </div>
+      </Section>
+
+      <Section title="Customer records">
+        <Button variant="outline" className="h-11 w-full justify-start" onClick={onManageOwners}>
+          <UserCog className="h-4 w-4" /> Manage credit owners
+        </Button>
       </Section>
 
       <Section title="Delete a credit">

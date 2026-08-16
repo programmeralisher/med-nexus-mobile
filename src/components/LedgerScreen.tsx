@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { balanceOf, fmtDate, fmtMoney, type Customer, type Store } from "@/lib/store";
 import { downloadLedgerPdf, type Period } from "@/lib/pdf";
+import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
 import { ArrowLeft, Download, Plus, Trash2 } from "lucide-react";
 
 export function LedgerScreen({
@@ -46,6 +47,15 @@ export function LedgerScreen({
   // already reflects the just-committed value optimistically.
   const [descDrafts, setDescDrafts] = React.useState<Record<string, string>>({});
   const [amountDrafts, setAmountDrafts] = React.useState<Record<string, string>>({});
+
+  // NEW in Phase 4: delete-transaction now requires the step-up password,
+  // per the brief's §6a consistency requirement (edit-customer-info,
+  // delete-customer, and delete-transaction should all use the same
+  // pattern). This previously called store.removeEntry() directly with no
+  // confirmation at all -- confirmed by reading this file before touching
+  // it. One shared dialog instance, reused for whichever entry id is
+  // currently pending, rather than one dialog per row.
+  const [deleteEntryId, setDeleteEntryId] = React.useState<string | null>(null);
 
   if (!customer) return null;
   const c: Customer = customer;
@@ -207,7 +217,7 @@ export function LedgerScreen({
                 </td>
                 <td className="px-2">
                   <button
-                    onClick={() => store.removeEntry(c.id, e.id)}
+                    onClick={() => setDeleteEntryId(e.id)}
                     className="text-muted-foreground hover:text-destructive"
                     aria-label="Erase entry"
                   >
@@ -259,6 +269,20 @@ export function LedgerScreen({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <StepUpPasswordDialog
+        open={deleteEntryId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteEntryId(null);
+        }}
+        title="Delete this entry?"
+        description="This can't be undone. Re-enter the shop password to confirm."
+        confirmLabel="Delete entry"
+        destructive
+        onConfirm={() => {
+          if (deleteEntryId) store.removeEntry(c.id, deleteEntryId);
+        }}
+      />
     </div>
   );
 }

@@ -450,6 +450,30 @@ async function fsTouchCustomer(customerId: string) {
   }
 }
 
+/**
+ * NEW in Phase 4 (§6a "Manage Credit Owners"): metadata-only update to a
+ * customer's name/contact. Writes ONLY to the customer doc itself -- never
+ * touches the entries subcollection, never recomputes anything derived from
+ * entries (balanceOf etc. stay 100% derived from entries, unaffected by
+ * this). Per the brief: "Editing a customer's info must not touch or
+ * recompute their financial history/outstanding balance."
+ */
+async function fsUpdateCustomerInfo(
+  customerId: string,
+  patch: { name?: string; contact?: string },
+) {
+  const services = getFirebase();
+  if (!services) return;
+  const fsPatch: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (patch.name !== undefined) fsPatch["name"] = patch.name;
+  if (patch.contact !== undefined) fsPatch["contact"] = patch.contact;
+  try {
+    await updateDoc(doc(services.db, customerDocPath(customerId)), fsPatch);
+  } catch (err) {
+    console.error("[store] Firestore: update customer info failed", customerId, err);
+  }
+}
+
 async function fsCreateEntry(customerId: string, entryId: string, entry: Omit<Entry, "id">) {
   const services = getFirebase();
   if (!services) return;
@@ -683,6 +707,14 @@ export function useAppStore() {
         setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
         if (patch.theme !== undefined) saveLocalTheme(patch.theme);
         if (patch.whatsapp !== undefined) void fsUpdateSharedSettings({ whatsapp: patch.whatsapp });
+      },
+      updateCustomerInfo(customerId: string, patch: { name?: string; contact?: string }) {
+        updateCustomer(customerId, (c) => ({
+          ...c,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.contact !== undefined ? { contact: patch.contact } : {}),
+        }));
+        void fsUpdateCustomerInfo(customerId, patch);
       },
       log,
     }),
