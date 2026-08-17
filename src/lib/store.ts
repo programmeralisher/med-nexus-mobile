@@ -257,6 +257,12 @@ function subscribeAppData(
       query(collection(db, customersCollectionPath()), orderBy("createdAt", "desc")),
       (snap) => {
         if (cancelled) return;
+        console.log(
+          "[store] customers snapshot:",
+          snap.docs.length,
+          "docs, fromCache:",
+          snap.metadata.fromCache,
+        );
         const currentIds = new Set<string>();
 
         // Customers, newest-created first -- CreditsScreen and ReportsScreen
