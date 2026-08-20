@@ -10,15 +10,17 @@ import {
 } from "@/components/ui/dialog";
 import { STORE_PASSWORD, balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
 import { downloadBackupPdf } from "@/lib/pdf";
-import { Download, History, LogOut, Moon, Sun, Trash2, UserCog } from "lucide-react";
+import { Download, History, LogOut, Moon, Sun, Trash2, Upload, UserCog } from "lucide-react";
 
 export function SettingsScreen({
   store,
   onManageOwners,
+  onBulkImport,
   onSignOut,
 }: {
   store: Store;
   onManageOwners: () => void;
+  onBulkImport: () => void;
   onSignOut: () => void;
 }) {
   const { settings } = store.data;
@@ -78,6 +80,9 @@ export function SettingsScreen({
       <Section title="Customer records">
         <Button variant="outline" className="h-11 w-full justify-start" onClick={onManageOwners}>
           <UserCog className="h-4 w-4" /> Manage credit owners
+        </Button>
+        <Button variant="outline" className="mt-2 h-11 w-full justify-start" onClick={onBulkImport}>
+          <Upload className="h-4 w-4" /> Bulk Entry
         </Button>
       </Section>
 
