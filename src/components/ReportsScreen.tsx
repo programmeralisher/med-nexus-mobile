@@ -62,11 +62,24 @@ export function ReportsScreen({ store }: { store: Store }) {
                 </p>
               </div>
               {paid ? (
-                <span className="shrink-0 rounded-full bg-success/15 px-3 py-1 text-xs font-semibold text-success">
-                  Paid for {monthName}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-full bg-success/15 px-3 py-1 text-xs font-semibold text-success">
+                    Paid for {monthName}
+                  </span>
+                  <button
+                    onClick={() => store.markUnpaid(c.id, mk)}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Undo
+                  </button>
+                </div>
               ) : (
-                <Button variant="success" size="sm" className="shrink-0" onClick={() => setConfirm(c)}>
+                <Button
+                  variant="success"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setConfirm(c)}
+                >
                   Mark as paid
                 </Button>
               )}

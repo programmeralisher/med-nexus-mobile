@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -547,6 +548,23 @@ async function fsMarkPaid(customerId: string, month: string) {
   }
 }
 
+/** arrayRemove is the atomic counterpart to arrayUnion above -- same
+ * offline/concurrent-write safety, just removing instead of adding. Only
+ * ever touches the paidMonths field; never touches entries, so no
+ * payment/recovery ledger data is affected by undoing a paid month. */
+async function fsMarkUnpaid(customerId: string, month: string) {
+  const services = getFirebase();
+  if (!services) return;
+  try {
+    await updateDoc(doc(services.db, customerDocPath(customerId)), {
+      paidMonths: arrayRemove(month),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("[store] Firestore: mark unpaid failed", customerId, month, err);
+  }
+}
+
 async function fsUpdateSharedSettings(patch: Partial<Pick<SettingsDoc, "whatsapp">>) {
   const services = getFirebase();
   if (!services) return;
@@ -708,6 +726,14 @@ export function useAppStore() {
         }));
         log(`Marked ${month} as paid`);
         void fsMarkPaid(customerId, month);
+      },
+      markUnpaid(customerId: string, month: string) {
+        updateCustomer(customerId, (c) => ({
+          ...c,
+          paidMonths: c.paidMonths.filter((m) => m !== month),
+        }));
+        log(`Marked ${month} as unpaid`);
+        void fsMarkUnpaid(customerId, month);
       },
       setSettings(patch: Partial<Settings>) {
         setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
