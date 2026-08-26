@@ -2,7 +2,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
-import { balanceOf, fmtMoney, type Customer, type Store } from "@/lib/store";
+import { balanceOf, findCustomerByName, fmtMoney, type Customer, type Store } from "@/lib/store";
 import { ArrowLeft, Search, User } from "lucide-react";
 
 /**
@@ -34,6 +34,7 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
   const [name, setName] = React.useState("");
   const [contact, setContact] = React.useState("");
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [dupError, setDupError] = React.useState<string | null>(null);
 
   const selected = store.data.customers.find((c) => c.id === selectedId) ?? null;
 
@@ -45,6 +46,21 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
     setSelectedId(c.id);
     setName(c.name);
     setContact(c.contact);
+    setDupError(null);
+  };
+
+  const handleSaveClick = () => {
+    if (!selected) return;
+    const trimmed = name.trim();
+    if (trimmed && trimmed.toLowerCase() !== selected.name.toLowerCase()) {
+      const existing = findCustomerByName(store.data.customers, trimmed, selected.id);
+      if (existing) {
+        setDupError(`A customer named "${trimmed}" already exists.`);
+        return;
+      }
+    }
+    setDupError(null);
+    setConfirmOpen(true);
   };
 
   const saveChanges = () => {
@@ -79,7 +95,13 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
         <div className="mt-4 space-y-3 rounded-2xl border border-border bg-card p-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setDupError(null);
+              }}
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -87,7 +109,12 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
             </label>
             <Input value={contact} onChange={(e) => setContact(e.target.value)} />
           </div>
-          <Button className="h-11 w-full" onClick={() => setConfirmOpen(true)}>
+          {dupError && (
+            <p className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {dupError}
+            </p>
+          )}
+          <Button className="h-11 w-full" onClick={handleSaveClick}>
             Save changes
           </Button>
         </div>

@@ -9,30 +9,39 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { balanceOf, fmtDateTime, fmtMoney, type Customer, type Store } from "@/lib/store";
+import {
+  balanceOf,
+  findCustomerByName,
+  fmtDateTime,
+  fmtMoney,
+  type Customer,
+  type Store,
+} from "@/lib/store";
 import { Plus, Search, UserRound } from "lucide-react";
 
-export function CreditsScreen({
-  store,
-  onOpen,
-}: {
-  store: Store;
-  onOpen: (c: Customer) => void;
-}) {
+export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Customer) => void }) {
   const [q, setQ] = React.useState("");
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [contact, setContact] = React.useState("");
+  const [dupWarning, setDupWarning] = React.useState<Customer | null>(null);
 
   const list = store.data.customers.filter((c) =>
     c.name.toLowerCase().includes(q.trim().toLowerCase()),
   );
 
   const create = () => {
-    if (!name.trim()) return;
-    store.addCustomer(name.trim(), contact.trim());
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const existing = findCustomerByName(store.data.customers, trimmed);
+    if (existing) {
+      setDupWarning(existing);
+      return;
+    }
+    store.addCustomer(trimmed, contact.trim());
     setName("");
     setContact("");
+    setDupWarning(null);
     setOpen(false);
   };
 
@@ -48,7 +57,13 @@ export function CreditsScreen({
             className="h-11 pl-9"
           />
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+          open={open}
+          onOpenChange={(o) => {
+            setOpen(o);
+            if (o) setDupWarning(null);
+          }}
+        >
           <DialogTrigger asChild>
             <Button className="h-11 shrink-0">
               <Plus className="h-4 w-4" />
@@ -63,13 +78,38 @@ export function CreditsScreen({
               <Input
                 placeholder="Full name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setDupWarning(null);
+                }}
               />
               <Input
                 placeholder="Contact number e.g. 03233745904"
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
               />
+              {dupWarning && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  <p>
+                    A customer named "{dupWarning.name}" already exists (outstanding{" "}
+                    {fmtMoney(balanceOf(dupWarning))}).
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-1 font-medium underline"
+                    onClick={() => {
+                      const existing = dupWarning;
+                      setOpen(false);
+                      setDupWarning(null);
+                      setName("");
+                      setContact("");
+                      onOpen(existing);
+                    }}
+                  >
+                    Open their ledger instead
+                  </button>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="success" className="w-full" onClick={create}>

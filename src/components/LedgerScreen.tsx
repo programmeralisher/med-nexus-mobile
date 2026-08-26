@@ -64,7 +64,7 @@ export function LedgerScreen({
 
   const addItem = () => {
     const amt = Number(amount);
-    if (!desc.trim() || !amt) return;
+    if (!desc.trim() || !Number.isFinite(amt) || amt <= 0) return;
     store.addEntry(c.id, {
       type: "item",
       description: desc.trim(),
@@ -77,7 +77,7 @@ export function LedgerScreen({
 
   const recordPayment = () => {
     const amt = Number(payAmount);
-    if (!amt) return;
+    if (!Number.isFinite(amt) || amt <= 0) return;
     store.addEntry(c.id, {
       type: "payment",
       description: payNote.trim() || "Payment received",
@@ -111,7 +111,8 @@ export function LedgerScreen({
       return next;
     });
     const original = c.entries.find((x) => x.id === entryId)?.amount;
-    const next = Number(value) || 0;
+    const next = Number(value);
+    if (!Number.isFinite(next) || next <= 0) return; // reject invalid/zero/negative -- field reverts to original
     if (next !== original) store.editEntry(c.id, entryId, { amount: next });
   };
 

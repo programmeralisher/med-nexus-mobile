@@ -128,6 +128,24 @@ export const lastPaymentOf = (c: Customer) =>
     .filter((e) => e.type === "payment")
     .sort((a, b) => +new Date(b.date) - +new Date(a.date))[0];
 
+/** Case-insensitive, whitespace-trimmed name match against a customer
+ * list -- the single shared implementation of "is this name already
+ * taken", used by both the create-customer and rename-customer duplicate
+ * checks. `excludeId` lets a rename check against everyone EXCEPT the
+ * customer being renamed, so fixing your own name's capitalization isn't
+ * mistaken for a collision with yourself. Bulk Entry's customer combobox
+ * has its own, separate exact-match logic (it searches the live list
+ * directly) and is intentionally not touched here. */
+export function findCustomerByName(
+  customers: Customer[],
+  name: string,
+  excludeId?: string,
+): Customer | undefined {
+  const key = name.trim().toLowerCase();
+  if (!key) return undefined;
+  return customers.find((c) => c.id !== excludeId && c.name.trim().toLowerCase() === key);
+}
+
 // ---------------------------------------------------------------------------
 // NEW in Phase 2: device-local theme persistence. `theme` is deliberately
 // NOT synced to Firestore (unlike `whatsapp`, which is real shared shop
