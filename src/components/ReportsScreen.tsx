@@ -16,17 +16,46 @@ import {
   type Store,
 } from "@/lib/store";
 import { downloadReportsPdf } from "@/lib/pdf";
-import { Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 
 export function ReportsScreen({ store }: { store: Store }) {
   const [confirm, setConfirm] = React.useState<Customer | null>(null);
-  const mk = monthKey();
-  const monthName = new Date().toLocaleString("en-GB", { month: "long" });
+  // NEW: which month Reports is currently viewing. Day fixed to 1 so
+  // shifting months (e.g. from a 31-day month) can never roll over into
+  // the wrong month. Starts on the current month, same as before.
+  const [viewedDate, setViewedDate] = React.useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d;
+  });
+  const mk = monthKey(viewedDate);
+  const monthName = viewedDate.toLocaleString("en-GB", { month: "long", year: "numeric" });
+  const isCurrentMonth = monthKey(viewedDate) === monthKey(new Date());
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <h2 className="truncate text-lg font-black text-foreground">Reports · {monthName}</h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            aria-label="Previous month"
+            onClick={() => setViewedDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <h2 className="truncate text-lg font-black text-foreground">Reports · {monthName}</h2>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            aria-label="Next month"
+            onClick={() => setViewedDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
         <Button
           variant="outline"
           className="shrink-0"
@@ -35,6 +64,21 @@ export function ReportsScreen({ store }: { store: Store }) {
           <Download className="h-4 w-4" /> PDF
         </Button>
       </div>
+
+      {!isCurrentMonth && (
+        <button
+          onClick={() =>
+            setViewedDate(() => {
+              const d = new Date();
+              d.setDate(1);
+              return d;
+            })
+          }
+          className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Back to current month
+        </button>
+      )}
 
       {store.data.customers.length === 0 && (
         <p className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">

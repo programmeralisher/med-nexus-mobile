@@ -10,7 +10,17 @@ import {
 } from "@/components/ui/dialog";
 import { STORE_PASSWORD, balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
 import { downloadBackupPdf } from "@/lib/pdf";
-import { Download, History, LogOut, Moon, Sun, Trash2, Upload, UserCog } from "lucide-react";
+import {
+  Download,
+  History,
+  LogOut,
+  Moon,
+  Search,
+  Sun,
+  Trash2,
+  Upload,
+  UserCog,
+} from "lucide-react";
 
 export function SettingsScreen({
   store,
@@ -26,12 +36,23 @@ export function SettingsScreen({
   const { settings } = store.data;
   const [wa, setWa] = React.useState(settings.whatsapp);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleteQuery, setDeleteQuery] = React.useState("");
   const [pendingId, setPendingId] = React.useState<string | null>(null);
   const [pwd, setPwd] = React.useState("");
   const [err, setErr] = React.useState("");
   const [historyOpen, setHistoryOpen] = React.useState(false);
 
   React.useEffect(() => setWa(settings.whatsapp), [settings.whatsapp]);
+
+  // NEW: reused, simple case-insensitive substring filter -- same pattern
+  // already used in CreditsScreen and ManageCreditOwnersScreen, not the
+  // heavier searchable-combobox pattern from Bulk Entry, which is built for
+  // a different context (picking a customer while typing a new row, with
+  // an "add new" fallback). This dialog only ever picks among EXISTING
+  // customers, so the simpler pattern is the right fit.
+  const filteredForDelete = store.data.customers.filter((c) =>
+    c.name.toLowerCase().includes(deleteQuery.trim().toLowerCase()),
+  );
 
   const confirmDelete = () => {
     if (pwd !== STORE_PASSWORD) {
@@ -119,13 +140,28 @@ export function SettingsScreen({
         <LogOut className="h-4 w-4" /> Sign out
       </Button>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (open) setDeleteQuery("");
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete a credit ledger</DialogTitle>
           </DialogHeader>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={deleteQuery}
+              onChange={(e) => setDeleteQuery(e.target.value)}
+              placeholder="Search by name"
+              className="pl-9"
+            />
+          </div>
           <div className="max-h-60 space-y-2 overflow-auto">
-            {store.data.customers.map((c) => (
+            {filteredForDelete.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setPendingId(c.id)}
@@ -142,6 +178,9 @@ export function SettingsScreen({
             ))}
             {store.data.customers.length === 0 && (
               <p className="text-sm text-muted-foreground">No ledgers.</p>
+            )}
+            {store.data.customers.length > 0 && filteredForDelete.length === 0 && (
+              <p className="text-sm text-muted-foreground">No matches.</p>
             )}
           </div>
           <Input
