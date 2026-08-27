@@ -1,6 +1,16 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -42,10 +52,30 @@ export function BulkImportScreen({ store, onBack }: { store: Store; onBack: () =
   const [progress, setProgress] = React.useState<BulkImportProgress | null>(null);
   const [result, setResult] = React.useState<BulkImportResult | null>(null);
   const [commitError, setCommitError] = React.useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const priceRefs = React.useRef<Record<string, HTMLInputElement | null>>({});
 
   const { valid, errors } = React.useMemo(() => validateSheetRows(rows), [rows]);
   const canImport = !importing && valid.length > 0 && errors.size === 0;
+
+  // Summary shown on the confirmation dialog only -- purely derived from the
+  // already-validated rows, no new validation logic. Customer count matches
+  // commitBulkSheet's own dedup rule for "new" rows (same name typed on two
+  // rows = one customer), so the number shown here matches what actually
+  // gets written.
+  const importSummary = React.useMemo(() => {
+    const customerKeys = new Set<string>();
+    let totalAmount = 0;
+    for (const row of valid) {
+      customerKeys.add(
+        row.customer.kind === "existing"
+          ? `existing:${row.customer.id}`
+          : `new:${row.customer.name.trim().toLowerCase()}`,
+      );
+      totalAmount += row.amount;
+    }
+    return { customerCount: customerKeys.size, totalAmount };
+  }, [valid]);
 
   const updateRow = (key: string, patch: Partial<SheetRow>) => {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -69,7 +99,13 @@ export function BulkImportScreen({ store, onBack }: { store: Store; onBack: () =
     // ready either way.
   };
 
-  const handleImport = async () => {
+  const handleImportClick = () => {
+    if (!canImport) return;
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmImport = async () => {
+    setConfirmOpen(false);
     if (!canImport) return;
     setImporting(true);
     setCommitError(null);
@@ -201,7 +237,7 @@ export function BulkImportScreen({ store, onBack }: { store: Store; onBack: () =
             <Button variant="outline" className="h-10 flex-1" onClick={addRow}>
               <Plus className="h-4 w-4" /> Add row
             </Button>
-            <Button className="h-10 flex-[2]" onClick={handleImport} disabled={!canImport}>
+            <Button className="h-10 flex-[2]" onClick={handleImportClick} disabled={!canImport}>
               {importing
                 ? progress
                   ? `Importing... batch ${progress.completedChunks} of ${progress.totalChunks}`
@@ -219,6 +255,31 @@ export function BulkImportScreen({ store, onBack }: { store: Store; onBack: () =
           )}
         </>
       )}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Import {valid.length} {valid.length === 1 ? "entry" : "entries"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <span className="block space-y-1">
+                <span className="block">
+                  {valid.length} valid {valid.length === 1 ? "entry" : "entries"} across{" "}
+                  {importSummary.customerCount}{" "}
+                  {importSummary.customerCount === 1 ? "customer" : "customers"}.
+                </span>
+                <span className="block">Total amount: {fmtMoney(importSummary.totalAmount)}</span>
+                <span className="block">This will be saved to every device immediately.</span>
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmImport}>Confirm import</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
