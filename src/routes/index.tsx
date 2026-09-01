@@ -10,6 +10,7 @@ import { SettingsScreen } from "@/components/SettingsScreen";
 import { ManageCreditOwnersScreen } from "@/components/ManageCreditOwnersScreen";
 import { BulkImportScreen } from "@/components/BulkImportScreen";
 import { useAppStore } from "@/lib/store";
+import { isAppUnlocked, setAppUnlocked } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { BarChart3, MessageCircle, Settings, Stethoscope, Wallet } from "lucide-react";
 
@@ -38,13 +39,28 @@ type Tab = "dashboard" | "credits" | "reports" | "messages" | "settings";
 
 function Index() {
   const store = useAppStore();
-  const [authed, setAuthed] = React.useState(false);
+  // Persistent login / session restore: seed `authed` from the local app
+  // password gate (see isAppUnlocked/setAppUnlocked in lib/auth.ts) via
+  // useState's lazy-initializer form, the same pattern already used for
+  // useAppStore's theme-restore fix -- evaluated once on mount, before the
+  // first paint, so a device that already passed Login before doesn't
+  // flash it again on a normal refresh or PWA reopen. isAppUnlocked()
+  // safely returns false during SSR, same as loadLocalTheme() does.
+  const [authed, setAuthed] = React.useState(() => isAppUnlocked());
   const [tab, setTab] = React.useState<Tab>("dashboard");
   const [ledgerId, setLedgerId] = React.useState<string | null>(null);
   const [manageOwnersOpen, setManageOwnersOpen] = React.useState(false);
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
 
-  if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
+  if (!authed)
+    return (
+      <Login
+        onSuccess={() => {
+          setAppUnlocked(true);
+          setAuthed(true);
+        }}
+      />
+    );
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "credits", label: "Credits", icon: <Wallet className="h-4 w-4" /> },
@@ -116,6 +132,7 @@ function Index() {
               onManageOwners={() => setManageOwnersOpen(true)}
               onBulkImport={() => setBulkImportOpen(true)}
               onSignOut={() => {
+                setAppUnlocked(false);
                 setAuthed(false);
                 setTab("dashboard");
                 setManageOwnersOpen(false);

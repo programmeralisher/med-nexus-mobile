@@ -93,3 +93,40 @@ export async function ensureSignedIn(): Promise<User | null> {
   const cred = await signInAnonymously(auth);
   return cred.user;
 }
+
+// ---------------------------------------------------------------------------
+// App password gate (persistent session / login restore).
+//
+// This is deliberately separate from the Firebase Auth session above.
+// ensureSignedIn() / auth.authStateReady() already runs unconditionally on
+// every mount (via useAppStore -> subscribeAppData) and already restores the
+// device's Firebase Anonymous Auth session correctly -- that part was never
+// broken and is untouched here.
+//
+// What WAS broken: the app's own password screen (Login.tsx / STORE_PASSWORD
+// in store.ts) gates the UI using a plain `React.useState(false)` in
+// routes/index.tsx, with no persistence at all -- so every normal refresh or
+// PWA reopen reset it to false and re-showed the password screen, even
+// though the device had already unlocked the app and Firebase was already
+// silently signed in behind it.
+//
+// Fix: remember "this device already typed the correct password" in
+// localStorage, under its own key -- separate from both the Firebase Auth
+// session (browser-managed, untouched) and the deviceId key above, so
+// clearing one can never accidentally affect the other. Purely a client-side
+// UI gate: it does not create, skip, or otherwise touch any Firebase Auth
+// UID, and has no bearing on the allowedDevices Firestore security rules,
+// which are enforced server-side against the Auth UID regardless of this
+// flag's value.
+const APP_UNLOCKED_KEY = "zeeshan-medical-khatta-unlocked";
+
+export function isAppUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(APP_UNLOCKED_KEY) === "1";
+}
+
+export function setAppUnlocked(unlocked: boolean): void {
+  if (typeof window === "undefined") return;
+  if (unlocked) window.localStorage.setItem(APP_UNLOCKED_KEY, "1");
+  else window.localStorage.removeItem(APP_UNLOCKED_KEY);
+}
