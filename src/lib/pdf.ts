@@ -77,6 +77,40 @@ export function downloadReportsPdf(customers: Customer[]) {
   doc.save(`zeeshan-reports-${mk}.pdf`);
 }
 
+// Date format used only inside the per-customer ledger table below, e.g.
+// "02-Sep-2026". Deliberately a local helper, not a change to store.ts's
+// exported fmtDate (which Dashboard/Reports/downloadLedgerPdf all still use
+// unchanged) -- this keeps the format change isolated to this one table.
+// Uses a fixed month-abbreviation table rather than
+// toLocaleString(...,{month:"short"}): that's locale/ICU-dependent and can
+// print "Sept" instead of "Sep" for September depending on the environment
+// (confirmed while testing this change) -- a fixed table guarantees the
+// exact 3-letter format every time, everywhere.
+const MONTH_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+const fmtDateLong = (iso: string) => {
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${day}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
+};
+
+// Light green used to highlight an entire payment/recovery row so it reads
+// as visually distinct from credit/item rows at a glance, per the backup
+// PDF spec. Credit rows are left with the table's normal default styling.
+const PAYMENT_ROW_FILL: [number, number, number] = [198, 246, 213];
+
 export function downloadBackupPdf(data: AppData) {
   const doc = new jsPDF();
   header(doc, "Full data backup", new Date().toLocaleString());
@@ -111,11 +145,26 @@ export function downloadBackupPdf(data: AppData) {
     const outstanding = balanceOf(c);
     const credit = outstanding + recovered;
 
-    header(doc, `Ledger: ${c.name}`, c.contact ? `Contact: ${c.contact}` : "No contact on file");
+    header(doc, `Customer: ${c.name}`, c.contact ? `Contact: ${c.contact}` : "Contact: -");
+
+    let y = 40;
+    doc.setFontSize(11);
+    doc.text("Summary:", 14, y);
+    y += 6;
     doc.setFontSize(10);
-    doc.text(`Outstanding balance: ${fmtMoney(outstanding)}`, 14, 37);
-    doc.text(`Total credit: ${fmtMoney(credit)}`, 14, 43);
-    doc.text(`Total recovery: ${fmtMoney(recovered)}`, 14, 49);
+    doc.text(`Name: ${c.name}`, 14, y);
+    y += 6;
+    doc.text(`Entries: ${c.entries.length}`, 14, y);
+    y += 6;
+    doc.text(`Total Credit: ${fmtMoney(credit)}`, 14, y);
+    y += 6;
+    doc.text(`Total Recovery: ${fmtMoney(recovered)}`, 14, y);
+    y += 6;
+    doc.text(`Outstanding: ${fmtMoney(outstanding)}`, 14, y);
+    y += 10;
+    doc.setFontSize(11);
+    doc.text("Ledger:", 14, y);
+    y += 4;
 
     // Chronological order (oldest first) so the running balance column below
     // reads as an actual running total, same ordering downloadLedgerPdf
@@ -129,22 +178,36 @@ export function downloadBackupPdf(data: AppData) {
       // intermediate value per row. Not a second balance calculation: by the
       // last row this always lands on the same total balanceOf(c) returns.
       running += e.type === "item" ? e.amount : -e.amount;
+      // "Buyer" isn't a field the Firestore schema tracks -- every current
+      // entry was made by the shop against this customer directly, so this
+      // column is always "Self" for now, not derived from EntryDoc.
+      const buyer = "Self";
+      const description =
+        e.type === "payment" ? e.description || "Payment received" : e.description;
       return [
         String(i + 1),
-        e.description,
-        (e.type === "payment" ? "- " : "") + fmtMoney(e.amount),
-        fmtDate(e.date),
-        e.type === "item" ? "Credit" : "Payment",
+        buyer,
+        fmtDateLong(e.date),
+        description,
+        fmtMoney(e.amount),
         fmtMoney(running),
       ];
     });
 
     autoTable(doc, {
-      startY: 54,
-      head: [["S.No", "Description", "Amount", "Date", "Type", "Running balance"]],
-      body: rows.length ? rows : [["-", "No ledger entries", "-", "-", "-", fmtMoney(0)]],
+      startY: y + 2,
+      head: [["S.No", "Buyer", "Date", "Item / Description", "Price", "Running Balance"]],
+      body: rows.length ? rows : [["-", "-", "-", "No ledger entries", "-", fmtMoney(0)]],
       theme: "grid",
       headStyles: { fillColor: [16, 122, 106] },
+      // Highlight the whole row green for payment/recovery entries so they
+      // are visually distinct from credit/item rows at a glance. rowIndex
+      // maps 1:1 onto sortedEntries/rows since neither is filtered.
+      didParseCell: (hookData) => {
+        if (hookData.section === "body" && sortedEntries[hookData.row.index]?.type === "payment") {
+          hookData.cell.styles.fillColor = PAYMENT_ROW_FILL;
+        }
+      },
       // Only fires for a SECOND (or later) page belonging to THIS customer's
       // own table -- i.e. exactly the "ledger continues onto additional
       // pages" case. Page 1 already has the full header + summary block
