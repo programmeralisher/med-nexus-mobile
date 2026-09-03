@@ -9,6 +9,7 @@ import { MessagesScreen } from "@/components/MessagesScreen";
 import { SettingsScreen } from "@/components/SettingsScreen";
 import { ManageCreditOwnersScreen } from "@/components/ManageCreditOwnersScreen";
 import { BulkImportScreen } from "@/components/BulkImportScreen";
+import { RecoverDeletedScreen } from "@/components/RecoverDeletedScreen";
 import { useAppStore } from "@/lib/store";
 import { isAppUnlocked, setAppUnlocked } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ function Index() {
   const [ledgerId, setLedgerId] = React.useState<string | null>(null);
   const [manageOwnersOpen, setManageOwnersOpen] = React.useState(false);
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
+  const [recoverDeletedOpen, setRecoverDeletedOpen] = React.useState(false);
 
   if (!authed)
     return (
@@ -80,6 +82,7 @@ function Index() {
               setLedgerId(null);
               setManageOwnersOpen(false);
               setBulkImportOpen(false);
+              setRecoverDeletedOpen(false);
             }}
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
@@ -126,17 +129,21 @@ function Index() {
             <ManageCreditOwnersScreen store={store} onBack={() => setManageOwnersOpen(false)} />
           ) : bulkImportOpen ? (
             <BulkImportScreen store={store} onBack={() => setBulkImportOpen(false)} />
+          ) : recoverDeletedOpen ? (
+            <RecoverDeletedScreen store={store} onBack={() => setRecoverDeletedOpen(false)} />
           ) : (
             <SettingsScreen
               store={store}
               onManageOwners={() => setManageOwnersOpen(true)}
               onBulkImport={() => setBulkImportOpen(true)}
+              onRecoverDeleted={() => setRecoverDeletedOpen(true)}
               onSignOut={() => {
                 setAppUnlocked(false);
                 setAuthed(false);
                 setTab("dashboard");
                 setManageOwnersOpen(false);
                 setBulkImportOpen(false);
+                setRecoverDeletedOpen(false);
               }}
             />
           ))}
@@ -156,6 +163,7 @@ function Index() {
                 if (t.id !== "settings") {
                   setManageOwnersOpen(false);
                   setBulkImportOpen(false);
+                  setRecoverDeletedOpen(false);
                 }
               }}
               className={

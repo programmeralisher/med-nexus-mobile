@@ -20,17 +20,20 @@ import {
   Trash2,
   Upload,
   UserCog,
+  ArchiveRestore,
 } from "lucide-react";
 
 export function SettingsScreen({
   store,
   onManageOwners,
   onBulkImport,
+  onRecoverDeleted,
   onSignOut,
 }: {
   store: Store;
   onManageOwners: () => void;
   onBulkImport: () => void;
+  onRecoverDeleted: () => void;
   onSignOut: () => void;
 }) {
   const { settings } = store.data;
@@ -114,6 +117,12 @@ export function SettingsScreen({
           onClick={() => setDeleteOpen(true)}
         >
           <Trash2 className="h-4 w-4" /> Choose a ledger to delete
+        </Button>
+      </Section>
+
+      <Section title="Recover deleted credits">
+        <Button variant="outline" className="h-11 w-full justify-start" onClick={onRecoverDeleted}>
+          <ArchiveRestore className="h-4 w-4" /> Recover deleted credits
         </Button>
       </Section>
 

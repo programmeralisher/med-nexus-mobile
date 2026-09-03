@@ -4,6 +4,7 @@ import {
   arrayUnion,
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -13,6 +14,7 @@ import {
   Timestamp,
   type Unsubscribe,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { getFirebase } from "./firebase";
 import { ensureSignedIn, getDeviceId } from "./auth";
@@ -463,6 +465,92 @@ async function fsSoftDeleteCustomer(customerId: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recover Deleted Credits (Settings -> Recover Deleted Credits). One-time,
+// on-demand reads only -- deliberately NOT a permanent onSnapshot listener
+// like the rest of this file, since browsing deleted customers is a rare
+// admin lookup, not something the rest of the app needs live. This does not
+// add, remove, or alter any existing listener or offline-cache behavior.
+//
+// Restoring is a single updateDoc flipping `deleted` back to false on the
+// SAME customer doc/id above -- fsSoftDeleteCustomer never touches the
+// entries subcollection, so restoring never needs to either. Once the flag
+// flips, the customers onSnapshot listener already running in
+// subscribeAppData picks the customer back up on its very next snapshot
+// (the `if (cData.deleted) continue` check above simply stops skipping it)
+// and starts a fresh entries listener for it, which reads the SAME,
+// never-touched entries subcollection. The customer's complete ledger and
+// exact prior balance reappear automatically, with no entry-level writes
+// here at all -- so there is no way for this to duplicate or alter a single
+// entry, and no second balance-calculation system: balanceOf/paidTotalOf
+// keep computing everything from the same entries array as always.
+// ---------------------------------------------------------------------------
+
+export interface DeletedCustomer extends Customer {
+  deletedAt: string;
+}
+
+/** One-time read of every soft-deleted customer, plus each one's existing
+ * (untouched, never-deleted) entries, so the Recover Deleted Credits screen
+ * has enough to show a safe identifying summary (name/contact/balance)
+ * before anyone commits to restoring a specific record. */
+export async function fetchDeletedCustomers(): Promise<DeletedCustomer[]> {
+  const services = getFirebase();
+  if (!services) return [];
+  const { db } = services;
+  try {
+    const snap = await getDocs(
+      query(collection(db, customersCollectionPath()), where("deleted", "==", true)),
+    );
+    const results: DeletedCustomer[] = [];
+    for (const cSnap of snap.docs) {
+      const cData = cSnap.data() as CustomerDoc;
+      const eSnap = await getDocs(collection(db, entriesCollectionPath(cSnap.id)));
+      const entries: Entry[] = [];
+      for (const ed of eSnap.docs) {
+        const eData = ed.data() as EntryDoc;
+        if (eData.deleted) continue;
+        entries.push({
+          id: ed.id,
+          type: eData.type,
+          description: eData.description,
+          amount: paisaToRupees(eData.amountPaisa),
+          date: eData.date,
+        });
+      }
+      results.push({
+        id: cSnap.id,
+        name: cData.name,
+        contact: cData.contact,
+        paidMonths: cData.paidMonths ?? [],
+        updatedAt: tsToIso(cData.updatedAt),
+        entries,
+        deletedAt: tsToIso(cData.deletedAt),
+      });
+    }
+    return results;
+  } catch (err) {
+    console.error("[store] Firestore: fetch deleted customers failed", err);
+    return [];
+  }
+}
+
+/** Restores a soft-deleted customer -- same document, same id. Mirrors
+ * fsSoftDeleteCustomer's write shape in reverse; never touches entries. */
+async function fsRestoreCustomer(customerId: string) {
+  const services = getFirebase();
+  if (!services) return;
+  try {
+    await updateDoc(doc(services.db, customerDocPath(customerId)), {
+      deleted: false,
+      deletedAt: null,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("[store] Firestore: restore customer failed", customerId, err);
+  }
+}
+
 async function fsTouchCustomer(customerId: string) {
   const services = getFirebase();
   if (!services) return;
@@ -765,6 +853,20 @@ export function useAppStore() {
           ...(patch.contact !== undefined ? { contact: patch.contact } : {}),
         }));
         void fsUpdateCustomerInfo(customerId, patch);
+      },
+      // No local optimistic customer-list update here, unlike the other
+      // mutators above: a soft-deleted customer was never present in
+      // data.customers to begin with (subscribeAppData filters it out), so
+      // there is nothing to add to optimistically. The already-running
+      // customers listener adds it back on its own next snapshot once the
+      // Firestore write below lands -- see the block comment above
+      // fsRestoreCustomer in this file for why that also brings the
+      // customer's entries back automatically. The Recover Deleted Credits
+      // screen removes it from its own local (one-time-fetched) list right
+      // after calling this, so it disappears from that screen immediately.
+      restoreCustomer(id: string, name: string) {
+        void fsRestoreCustomer(id);
+        log(`Customer "${name}" restored from deleted credits`);
       },
       log,
     }),
