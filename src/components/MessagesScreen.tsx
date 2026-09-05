@@ -4,10 +4,27 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { balanceOf, fmtMoney, monthKey, type Customer, type Store } from "@/lib/store";
 import { MessageCircle, Send } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 
 const waLink = (num: string, text: string) => {
   const clean = num.replace(/\D/g, "").replace(/^0/, "92");
   return `https://wa.me/${clean}?text=${encodeURIComponent(text)}`;
+};
+
+// A plain WebView's window.open(url, "_blank") does not hand a https://wa.me
+// link off to the installed WhatsApp app the way a real browser tab does --
+// confirmed in the pre-Phase-9 audit. @capacitor/browser's Browser.open()
+// uses Chrome Custom Tabs on Android, which DOES respect Android's app-link
+// handling, so it opens WhatsApp itself exactly like tapping the link in a
+// normal browser would. Web/desktop (Capacitor.isNativePlatform() === false)
+// keeps the exact same window.open(...) call as before -- unchanged.
+const openExternalUrl = async (url: string) => {
+  if (Capacitor.isNativePlatform()) {
+    await Browser.open({ url });
+  } else {
+    window.open(url, "_blank");
+  }
 };
 
 export function MessagesScreen({ store }: { store: Store }) {
@@ -31,7 +48,7 @@ export function MessagesScreen({ store }: { store: Store }) {
 
   const send = (num: string, text: string, who: string) => {
     if (!num) return;
-    window.open(waLink(num, text), "_blank");
+    void openExternalUrl(waLink(num, text));
     store.log(`Sent WhatsApp message to ${who}`);
   };
 
@@ -61,7 +78,11 @@ export function MessagesScreen({ store }: { store: Store }) {
           <Button
             className="shrink-0"
             onClick={() =>
-              send(manualNumber, custom.trim() || "Message from Zeeshan Medical Store", manualNumber)
+              send(
+                manualNumber,
+                custom.trim() || "Message from Zeeshan Medical Store",
+                manualNumber,
+              )
             }
           >
             <Send className="h-4 w-4" /> Send

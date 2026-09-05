@@ -9,6 +9,7 @@ import {
   type AppData,
   type Customer,
 } from "./store";
+import { saveOrSharePdf } from "./nativePdf";
 
 const header = (doc: jsPDF, title: string, sub?: string) => {
   doc.setFontSize(16);
@@ -31,7 +32,7 @@ const inPeriod = (iso: string, period: Period) => {
   return d.getFullYear() === now.getFullYear();
 };
 
-export function downloadLedgerPdf(c: Customer, period: Period) {
+export async function downloadLedgerPdf(c: Customer, period: Period) {
   const doc = new jsPDF();
   header(doc, `Ledger: ${c.name}`, `${c.contact || "no contact"} · ${period} report`);
   const rows = c.entries
@@ -53,10 +54,10 @@ export function downloadLedgerPdf(c: Customer, period: Period) {
   const y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
   doc.setFontSize(12);
   doc.text(`Total outstanding: ${fmtMoney(balanceOf(c))}`, 14, y);
-  doc.save(`${c.name.replace(/\s+/g, "-")}-${period}.pdf`);
+  await saveOrSharePdf(doc, `${c.name.replace(/\s+/g, "-")}-${period}.pdf`);
 }
 
-export function downloadReportsPdf(customers: Customer[]) {
+export async function downloadReportsPdf(customers: Customer[]) {
   const doc = new jsPDF();
   const mk = monthKey();
   header(doc, `Reports - ${mk}`, new Date().toLocaleString());
@@ -74,7 +75,7 @@ export function downloadReportsPdf(customers: Customer[]) {
     theme: "grid",
     headStyles: { fillColor: [16, 122, 106] },
   });
-  doc.save(`zeeshan-reports-${mk}.pdf`);
+  await saveOrSharePdf(doc, `zeeshan-reports-${mk}.pdf`);
 }
 
 // Date format used only inside the per-customer ledger table below, e.g.
@@ -111,7 +112,7 @@ const fmtDateLong = (iso: string) => {
 // PDF spec. Credit rows are left with the table's normal default styling.
 const PAYMENT_ROW_FILL: [number, number, number] = [198, 246, 213];
 
-export function downloadBackupPdf(data: AppData) {
+export async function downloadBackupPdf(data: AppData) {
   const doc = new jsPDF();
   header(doc, "Full data backup", new Date().toLocaleString());
   autoTable(doc, {
@@ -222,5 +223,5 @@ export function downloadBackupPdf(data: AppData) {
     });
   });
 
-  doc.save("zeeshan-medical-backup.pdf");
+  await saveOrSharePdf(doc, "zeeshan-medical-backup.pdf");
 }
