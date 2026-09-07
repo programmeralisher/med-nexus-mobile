@@ -40,30 +40,35 @@ export function SettingsScreen({
   const [wa, setWa] = React.useState(settings.whatsapp);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleteQuery, setDeleteQuery] = React.useState("");
-  const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [pwd, setPwd] = React.useState("");
   const [err, setErr] = React.useState("");
   const [historyOpen, setHistoryOpen] = React.useState(false);
 
   React.useEffect(() => setWa(settings.whatsapp), [settings.whatsapp]);
 
-  // NEW: reused, simple case-insensitive substring filter -- same pattern
-  // already used in CreditsScreen and ManageCreditOwnersScreen, not the
-  // heavier searchable-combobox pattern from Bulk Entry, which is built for
-  // a different context (picking a customer while typing a new row, with
-  // an "add new" fallback). This dialog only ever picks among EXISTING
-  // customers, so the simpler pattern is the right fit.
   const filteredForDelete = store.data.customers.filter((c) =>
     c.name.toLowerCase().includes(deleteQuery.trim().toLowerCase()),
   );
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
 
   const confirmDelete = () => {
     if (pwd !== STORE_PASSWORD) {
       setErr("Wrong password");
       return;
     }
-    if (pendingId) store.deleteCustomer(pendingId);
-    setPendingId(null);
+    selectedIds.forEach((id) => store.deleteCustomer(id));
+    setSelectedIds(new Set());
     setPwd("");
     setErr("");
     setDeleteOpen(false);
@@ -153,12 +158,17 @@ export function SettingsScreen({
         open={deleteOpen}
         onOpenChange={(open) => {
           setDeleteOpen(open);
-          if (open) setDeleteQuery("");
+          if (!open) {
+            setDeleteQuery("");
+            setSelectedIds(new Set());
+            setPwd("");
+            setErr("");
+          }
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete a credit ledger</DialogTitle>
+            <DialogTitle>Delete credit ledgers</DialogTitle>
           </DialogHeader>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -169,16 +179,40 @@ export function SettingsScreen({
               className="pl-9"
             />
           </div>
+          {filteredForDelete.length > 1 && (
+            <button
+              onClick={() => {
+                const allIds = new Set(filteredForDelete.map((c) => c.id));
+                const allSelected = filteredForDelete.every((c) => selectedIds.has(c.id));
+                setSelectedIds(allSelected ? new Set() : allIds);
+              }}
+              className="text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              {filteredForDelete.every((c) => selectedIds.has(c.id))
+                ? "Deselect all"
+                : `Select all (${filteredForDelete.length})`}
+            </button>
+          )}
           <div className="max-h-60 space-y-2 overflow-auto">
             {filteredForDelete.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setPendingId(c.id)}
+                onClick={() => toggleSelect(c.id)}
                 className={
-                  "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl border p-3 text-left " +
-                  (pendingId === c.id ? "border-destructive bg-destructive/10" : "border-border")
+                  "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border p-3 text-left " +
+                  (selectedIds.has(c.id) ? "border-destructive bg-destructive/10" : "border-border")
                 }
               >
+                <span
+                  className={
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold " +
+                    (selectedIds.has(c.id)
+                      ? "border-destructive bg-destructive text-white"
+                      : "border-muted-foreground")
+                  }
+                >
+                  {selectedIds.has(c.id) ? "✓" : ""}
+                </span>
                 <span className="truncate font-medium text-foreground">{c.name}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {fmtMoney(balanceOf(c))}
@@ -206,10 +240,14 @@ export function SettingsScreen({
             <Button
               variant="destructive"
               className="w-full"
-              disabled={!pendingId}
+              disabled={selectedIds.size === 0}
               onClick={confirmDelete}
             >
-              Delete permanently
+              {selectedIds.size > 1
+                ? `Delete ${selectedIds.size} ledgers`
+                : selectedIds.size === 1
+                  ? "Delete 1 ledger"
+                  : "Select ledgers to delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
