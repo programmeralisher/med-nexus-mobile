@@ -66,7 +66,7 @@ export function CreditsScreen({
                 onChange={(e) => setName(e.target.value)}
               />
               <Input
-                placeholder="Contact number e.g. 03233745904"
+                placeholder="Contact number e.g. 0300-000000-0"
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
               />
