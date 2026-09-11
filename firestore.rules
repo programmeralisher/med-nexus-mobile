@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// *** DRAFT ONLY — NOT DEPLOYED ***
+
 // Per the migration brief's checkpoint #2: this file must be shown to and
 // approved by the shop owner before it is ever deployed to the live
 // "zeeshan-medical-store" Firebase project with `firebase deploy --only
