@@ -56,7 +56,7 @@ export function MessagesScreen({ store }: { store: Store }) {
           <Input
             value={manualNumber}
             onChange={(e) => setManualNumber(e.target.value)}
-            placeholder="Send to a number e.g. 03233745904"
+            placeholder="Send to a number e.g. 0300-000000-0"
           />
           <Button
             className="shrink-0"
