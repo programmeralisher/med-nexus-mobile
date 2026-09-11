@@ -1,7 +1,7 @@
-# Zeeshan Health Hub
+
 
 make an medical app that runs on both laptop and mobile 
-first screen : heading of    "Zeeshan medical store khatta app"
+first screen : heading of    "medical store khatta app"
 
 This project was built with [Lovable](https://lovable.dev).
 
