@@ -38,7 +38,7 @@ export interface AppData {
 
 const KEY = "zeeshan-medical-khatta-v1";
 
-export const STORE_PASSWORD = "store123";
+export const STORE_PASSWORD = "RANDOMSTRINGS";
 
 const defaultData: AppData = {
   customers: [],
