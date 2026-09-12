@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { balanceOf, fmtMoney, monthKey, type Customer, type Store } from "@/lib/store";
-import { MessageCircle, Send } from "lucide-react";
+import { MessageCircle, Search, Send } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 
@@ -32,9 +32,13 @@ export function MessagesScreen({ store }: { store: Store }) {
   const monthName = new Date().toLocaleString("en-GB", { month: "long" });
   const [custom, setCustom] = React.useState("");
   const [manualNumber, setManualNumber] = React.useState("");
+  const [query, setQuery] = React.useState("");
 
   const unpaid = store.data.customers.filter((c) => !c.paidMonths.includes(mk));
   const paid = store.data.customers.filter((c) => c.paidMonths.includes(mk));
+
+  const q = query.trim().toLowerCase();
+  const filteredCustomers = store.data.customers.filter((c) => c.name.toLowerCase().includes(q));
 
   const unpaidMsg = (c: Customer) =>
     custom.trim()
@@ -109,8 +113,22 @@ export function MessagesScreen({ store }: { store: Store }) {
         </Button>
       </div>
 
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name"
+          className="pl-9"
+        />
+      </div>
+
+      {store.data.customers.length > 0 && filteredCustomers.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground">No matches.</p>
+      )}
+
       <div className="space-y-2">
-        {store.data.customers.map((c) => {
+        {filteredCustomers.map((c) => {
           const isPaid = c.paidMonths.includes(mk);
           return (
             <div

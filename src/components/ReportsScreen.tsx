@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -16,13 +17,11 @@ import {
   type Store,
 } from "@/lib/store";
 import { downloadReportsPdf } from "@/lib/pdf";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 
 export function ReportsScreen({ store }: { store: Store }) {
   const [confirm, setConfirm] = React.useState<Customer | null>(null);
-  // NEW: which month Reports is currently viewing. Day fixed to 1 so
-  // shifting months (e.g. from a 31-day month) can never roll over into
-  // the wrong month. Starts on the current month, same as before.
+  const [query, setQuery] = React.useState("");
   const [viewedDate, setViewedDate] = React.useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -31,6 +30,10 @@ export function ReportsScreen({ store }: { store: Store }) {
   const mk = monthKey(viewedDate);
   const monthName = viewedDate.toLocaleString("en-GB", { month: "long", year: "numeric" });
   const isCurrentMonth = monthKey(viewedDate) === monthKey(new Date());
+
+  const filtered = store.data.customers.filter((c) =>
+    c.name.toLowerCase().includes(query.trim().toLowerCase()),
+  );
 
   return (
     <div className="space-y-4">
@@ -65,6 +68,16 @@ export function ReportsScreen({ store }: { store: Store }) {
         </Button>
       </div>
 
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name"
+          className="pl-9"
+        />
+      </div>
+
       {!isCurrentMonth && (
         <button
           onClick={() =>
@@ -86,8 +99,12 @@ export function ReportsScreen({ store }: { store: Store }) {
         </p>
       )}
 
+      {store.data.customers.length > 0 && filtered.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground">No matches.</p>
+      )}
+
       <div className="space-y-2">
-        {store.data.customers.map((c, i) => {
+        {filtered.map((c, i) => {
           const paid = c.paidMonths.includes(mk);
           const last = lastPaymentOf(c);
           return (
