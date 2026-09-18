@@ -1,7 +1,21 @@
-# Zeeshan Health Hub
+# Credit Ledger App (Production / SaaS branch)
 
-make an medical app that runs on both laptop and mobile 
-first screen : heading of    "Zeeshan medical store khatta app"
+A credit-ledger (khatta) app that runs on both laptop and mobile. This
+`production` branch turns the original single-shop app into a multi-tenant
+product: each shop signs up with its own phone number + password and
+chooses its own shop name at signup (shown throughout the app and on PDF
+exports) instead of a hardcoded shop identity.
+
+This branch requires its own, separate Firebase project (new API keys via
+`.env` — see `.env.example`). Do not point it at the original single-shop
+Firebase project.
+
+**Status of this patch:** sign up / sign in / forgot-password (contact
+developer) screens and removal of all hardcoded shop branding are done.
+Still to come in follow-up patches: the full multi-tenant Firestore data
+model + security rules rewrite, multi-device linking between two accounts
+of the same shop, the admin panel (list of shops/devices, block/unblock),
+and self-service password reset via the security question.
 
 This project was built with [Lovable](https://lovable.dev).
 

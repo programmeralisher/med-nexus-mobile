@@ -10,10 +10,11 @@ import {
   type Customer,
 } from "./store";
 import { saveOrSharePdf } from "./nativePdf";
+import { getShopName } from "./shop";
 
 const header = (doc: jsPDF, title: string, sub?: string) => {
   doc.setFontSize(16);
-  doc.text("Zeeshan Medical Store - Khatta", 14, 16);
+  doc.text(`${getShopName()} - Khatta`, 14, 16);
   doc.setFontSize(12);
   doc.text(title, 14, 24);
   if (sub) {
@@ -75,7 +76,7 @@ export async function downloadReportsPdf(customers: Customer[]) {
     theme: "grid",
     headStyles: { fillColor: [16, 122, 106] },
   });
-  await saveOrSharePdf(doc, `zeeshan-reports-${mk}.pdf`);
+  await saveOrSharePdf(doc, `credit-ledger-reports-${mk}.pdf`);
 }
 
 // Date format used only inside the per-customer ledger table below, e.g.
@@ -223,5 +224,5 @@ export async function downloadBackupPdf(data: AppData) {
     });
   });
 
-  await saveOrSharePdf(doc, "zeeshan-medical-backup.pdf");
+  await saveOrSharePdf(doc, "credit-ledger-backup.pdf");
 }

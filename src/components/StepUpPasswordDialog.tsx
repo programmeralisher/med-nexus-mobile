@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { STORE_PASSWORD } from "@/lib/store";
+import { verifyCurrentPassword } from "@/lib/authAccount";
 
 /**
  * Re-enter-the-shop-password confirmation, used for sensitive actions that
@@ -46,16 +46,21 @@ export function StepUpPasswordDialog({
 }) {
   const [pwd, setPwd] = React.useState("");
   const [err, setErr] = React.useState("");
+  const [checking, setChecking] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setPwd("");
       setErr("");
+      setChecking(false);
     }
   }, [open]);
 
-  const confirm = () => {
-    if (pwd !== STORE_PASSWORD) {
+  const confirm = async () => {
+    setChecking(true);
+    const ok = await verifyCurrentPassword(pwd);
+    setChecking(false);
+    if (!ok) {
       setErr("Wrong password");
       return;
     }
@@ -73,7 +78,7 @@ export function StepUpPasswordDialog({
         <Input
           autoFocus
           type="password"
-          placeholder="Enter shop password"
+          placeholder="Enter your password"
           value={pwd}
           onChange={(e) => {
             setPwd(e.target.value);
@@ -88,9 +93,10 @@ export function StepUpPasswordDialog({
           <Button
             variant={destructive ? "destructive" : "default"}
             className="w-full"
+            disabled={checking}
             onClick={confirm}
           >
-            {confirmLabel}
+            {checking ? "Checking..." : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

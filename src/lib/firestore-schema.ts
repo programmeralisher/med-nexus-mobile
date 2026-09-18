@@ -15,6 +15,13 @@ import type { EntryType } from "./store";
  * Single fixed shop ID. This is one store, not multi-tenant SaaS — every
  * device/UID that's ever authorized always points at this same tree. There
  * is deliberately no "which shop" routing logic anywhere in this app.
+ *
+ * PRODUCTION BRANCH TODO: this whole file is still single-tenant. The
+ * signup/login screens added in this patch (AuthScreen.tsx, authAccount.ts)
+ * do NOT yet route data per-account — that requires replacing this fixed
+ * SHOP_ID with a per-account tenant ID (e.g. the signed-in user's uid or a
+ * generated tenant doc id) throughout the path builders below, plus a
+ * matching Firestore rules rewrite. That's the next, separate patch.
  */
 export const SHOP_ID = "zeeshan-medical-store";
 

@@ -90,7 +90,10 @@ export interface AppData {
  */
 const KEY = "zeeshan-medical-khatta-v1";
 
-export const STORE_PASSWORD = "RANDOMSTRING";
+// NOTE (production branch): the old single shared STORE_PASSWORD gate is
+// gone. Access is now per-account via real Firebase email/password auth --
+// see src/lib/authAccount.ts and src/components/AuthScreen.tsx. There is no
+// app-wide password left to hardcode.
 
 const defaultData: AppData = {
   customers: [],

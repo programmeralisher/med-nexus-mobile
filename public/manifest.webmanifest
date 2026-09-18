@@ -1,7 +1,7 @@
 {
-  "name": "Zeeshan Medical Store Khatta App",
-  "short_name": "Zeeshan Khatta",
-  "description": "Credit ledger app for Zeeshan Medical Store: track khatta, recoveries, monthly reports and WhatsApp reminders.",
+  "name": "Credit Ledger App",
+  "short_name": "Credit Ledger",
+  "description": "Credit ledger app: track khatta, recoveries, monthly reports and WhatsApp reminders.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

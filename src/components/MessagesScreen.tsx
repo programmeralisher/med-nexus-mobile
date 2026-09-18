@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { balanceOf, fmtMoney, monthKey, type Customer, type Store } from "@/lib/store";
+import { getShopName } from "@/lib/shop";
 import { MessageCircle, Search, Send } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
@@ -43,12 +44,12 @@ export function MessagesScreen({ store }: { store: Store }) {
   const unpaidMsg = (c: Customer) =>
     custom.trim()
       ? custom
-      : `Assalam o Alaikum ${c.name}, your medical bill at Zeeshan Medical Store for ${monthName} is ${fmtMoney(balanceOf(c))}. Kindly clear your payment. Shukriya.`;
+      : `Assalam o Alaikum ${c.name}, your medical bill at ${getShopName()} for ${monthName} is ${fmtMoney(balanceOf(c))}. Kindly clear your payment. Shukriya.`;
 
   const paidMsg = (c: Customer) =>
     custom.trim()
       ? custom
-      : `Assalam o Alaikum ${c.name}, your monthly bill at Zeeshan Medical Store is paid. Thank you!`;
+      : `Assalam o Alaikum ${c.name}, your monthly bill at ${getShopName()} is paid. Thank you!`;
 
   const send = (num: string, text: string, who: string) => {
     if (!num) return;
@@ -84,7 +85,7 @@ export function MessagesScreen({ store }: { store: Store }) {
             onClick={() =>
               send(
                 manualNumber,
-                custom.trim() || "Message from Zeeshan Medical Store",
+                custom.trim() || `Message from ${getShopName()}`,
                 manualNumber,
               )
             }

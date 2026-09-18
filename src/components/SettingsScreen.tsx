@@ -8,7 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { STORE_PASSWORD, balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
+import { balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
+import { verifyCurrentPassword } from "@/lib/authAccount";
 import { downloadBackupPdf } from "@/lib/pdf";
 import {
   Download,
@@ -62,8 +63,13 @@ export function SettingsScreen({
       return next;
     });
 
-  const confirmDelete = () => {
-    if (pwd !== STORE_PASSWORD) {
+  const [deleteChecking, setDeleteChecking] = React.useState(false);
+
+  const confirmDelete = async () => {
+    setDeleteChecking(true);
+    const ok = await verifyCurrentPassword(pwd);
+    setDeleteChecking(false);
+    if (!ok) {
       setErr("Wrong password");
       return;
     }

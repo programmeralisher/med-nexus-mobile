@@ -36,8 +36,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const DEPLOYED_APP_URL = "https://REPLACE-WITH-YOUR-DEPLOYED-URL.example.com";
 
 const config: CapacitorConfig = {
-  appId: "com.zeeshanmedical.khatta",
-  appName: "Zeeshan Khatta",
+  appId: "com.creditledger.app",
+  appName: "Credit Ledger App",
   webDir: ".output/public",
   server: {
     url: DEPLOYED_APP_URL,

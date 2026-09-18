@@ -1,6 +1,6 @@
 import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Login } from "@/components/Login";
+import { AuthScreen } from "@/components/AuthScreen";
 import { Dashboard } from "@/components/Dashboard";
 import { CreditsScreen } from "@/components/CreditsScreen";
 import { LedgerScreen } from "@/components/LedgerScreen";
@@ -11,20 +11,20 @@ import { ManageCreditOwnersScreen } from "@/components/ManageCreditOwnersScreen"
 import { BulkImportScreen } from "@/components/BulkImportScreen";
 import { RecoverDeletedScreen } from "@/components/RecoverDeletedScreen";
 import { useAppStore } from "@/lib/store";
-import { isAppUnlocked, setAppUnlocked } from "@/lib/auth";
+import { watchAuthState, signOutAccount } from "@/lib/authAccount";
+import { getShopName } from "@/lib/shop";
 import { Button } from "@/components/ui/button";
 import { BarChart3, MessageCircle, Settings, Stethoscope, Wallet } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Zeeshan Medical Store Khatta App" },
+      { title: "Credit Ledger App" },
       {
         name: "description",
-        content:
-          "Credit ledger app for Zeeshan Medical Store: track khatta, recoveries, monthly reports and WhatsApp reminders.",
+        content: "Credit ledger app: track customer credit, recoveries, monthly reports and WhatsApp reminders.",
       },
-      { property: "og:title", content: "Zeeshan Medical Store Khatta App" },
+      { property: "og:title", content: "Credit Ledger App" },
       {
         property: "og:description",
         content: "Track customer credit, payments, reports and WhatsApp reminders in one place.",
@@ -40,29 +40,30 @@ type Tab = "dashboard" | "credits" | "reports" | "messages" | "settings";
 
 function Index() {
   const store = useAppStore();
-  // Persistent login / session restore: seed `authed` from the local app
-  // password gate (see isAppUnlocked/setAppUnlocked in lib/auth.ts) via
-  // useState's lazy-initializer form, the same pattern already used for
-  // useAppStore's theme-restore fix -- evaluated once on mount, before the
-  // first paint, so a device that already passed Login before doesn't
-  // flash it again on a normal refresh or PWA reopen. isAppUnlocked()
-  // safely returns false during SSR, same as loadLocalTheme() does.
-  const [authed, setAuthed] = React.useState(() => isAppUnlocked());
+  // Real Firebase Auth session (persists across refreshes/PWA reopens on
+  // its own -- see watchAuthState in lib/authAccount.ts). `authChecked`
+  // stays false only for the brief moment while the SDK restores a
+  // previously-signed-in session from IndexedDB, so a device that already
+  // signed in before doesn't flash the sign-in screen on every open.
+  const [authed, setAuthed] = React.useState(false);
+  const [authChecked, setAuthChecked] = React.useState(false);
   const [tab, setTab] = React.useState<Tab>("dashboard");
   const [ledgerId, setLedgerId] = React.useState<string | null>(null);
   const [manageOwnersOpen, setManageOwnersOpen] = React.useState(false);
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
   const [recoverDeletedOpen, setRecoverDeletedOpen] = React.useState(false);
 
-  if (!authed)
-    return (
-      <Login
-        onSuccess={() => {
-          setAppUnlocked(true);
-          setAuthed(true);
-        }}
-      />
-    );
+  React.useEffect(() => {
+    const unsubscribe = watchAuthState((user) => {
+      setAuthed(!!user);
+      setAuthChecked(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  if (!authChecked) return null;
+
+  if (!authed) return <AuthScreen onSuccess={() => setAuthed(true)} />;
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "credits", label: "Credits", icon: <Wallet className="h-4 w-4" /> },
@@ -89,7 +90,7 @@ function Index() {
               <Stethoscope className="h-5 w-5" />
             </span>
             <h1 className="truncate text-base font-black text-foreground sm:text-lg">
-              Zeeshan medical store khatta app
+              {getShopName()}
             </h1>
           </button>
         </div>
@@ -138,7 +139,7 @@ function Index() {
               onBulkImport={() => setBulkImportOpen(true)}
               onRecoverDeleted={() => setRecoverDeletedOpen(true)}
               onSignOut={() => {
-                setAppUnlocked(false);
+                void signOutAccount();
                 setAuthed(false);
                 setTab("dashboard");
                 setManageOwnersOpen(false);
