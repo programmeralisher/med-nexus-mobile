@@ -33,7 +33,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // >>> See PHASE9-ANDROID.md for the full walkthrough. <<<
 // ---------------------------------------------------------------------------
 
-const DEPLOYED_APP_URL = "https://REPLACE-WITH-YOUR-DEPLOYED-URL.example.com";
+const DEPLOYED_APP_URL = "https://programmeralisher-med-nexus-mobile.zeeshanmedical.workers.dev";
 
 const config: CapacitorConfig = {
   appId: "com.zeeshanmedical.khatta",
@@ -50,5 +50,6 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
 };
+
 
 export default config;
