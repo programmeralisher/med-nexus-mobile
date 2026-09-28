@@ -11,7 +11,7 @@ import {
 
 // TODO(production, contact number): put the real developer support number
 // here before shipping -- placeholder only.
-const DEVELOPER_SUPPORT_NUMBER = "0300-000000-0";
+const DEVELOPER_SUPPORT_NUMBER = "03233745904";
 
 type Mode = "signin" | "signup" | "forgot";
 
