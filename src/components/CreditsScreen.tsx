@@ -12,10 +12,12 @@ import {
 import {
   balanceOf,
   findCustomerByName,
+  fmtDate,
   fmtDateTime,
   fmtMoney,
   isDefaulter,
   isStarCustomer,
+  lastPaymentOf,
   type Customer,
   type Store,
 } from "@/lib/store";
@@ -167,6 +169,17 @@ export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Cus
                   Updated
                   <br />
                   {fmtDateTime(c.updatedAt)}
+                  {(() => {
+                    const last = lastPaymentOf(c);
+                    return last ? (
+                      <>
+                        <br />
+                        <span className="font-semibold text-success">
+                          Last Paid: {fmtDate(last.date)}
+                        </span>
+                      </>
+                    ) : null;
+                  })()}
                 </p>
               </div>
             </button>

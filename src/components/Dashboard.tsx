@@ -2,6 +2,7 @@ import * as React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   balanceOf,
+  fmtDate,
   fmtMoney,
   isDefaulter,
   isStarCustomer,
@@ -12,13 +13,20 @@ import {
 } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, History } from "lucide-react";
 
 type Range = "daily" | "weekly" | "monthly" | "yearly";
 type Period = "today" | "week" | "month" | "year";
@@ -40,6 +48,9 @@ const inGroup = (c: Customer, g: Group) => {
       return !isDefaulter(c) && !isStarCustomer(c);
   }
 };
+
+/** An entry as the dashboard sees it: the ledger entry plus whose it is. */
+type DashEntry = { id: string; date: string; amount: number; description: string; name: string };
 
 const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
 
@@ -65,32 +76,32 @@ function getThisWeekRange(): { start: Date; end: Date } {
  * truth" the brief asks for: there is only ONE place that decides what
  * "this week"/"this month"/"this year" means for the dashboard, reused by
  * both cards and the chart, not three separate implementations. */
-function usePeriodFilter(entries: { date: string; amount: number }[]) {
+function usePeriodFilter(entries: DashEntry[]) {
   const [period, setPeriod] = React.useState<Period>("today");
   const [monthDate, setMonthDate] = React.useState(() => new Date());
   const [year, setYear] = React.useState(() => new Date().getFullYear());
 
-  const amount = React.useMemo(() => {
+  // The entries that fall inside the selected period, newest first. `amount`
+  // below is just their sum, so the number on the card and the rows in the
+  // history dialog can never disagree -- one filter, two views of it.
+  const rows = React.useMemo(() => {
+    let picked: DashEntry[];
     if (period === "today") {
-      return entries.filter((e) => isToday(e.date)).reduce((s, e) => s + e.amount, 0);
-    }
-    if (period === "week") {
+      picked = entries.filter((e) => isToday(e.date));
+    } else if (period === "week") {
       const { start, end } = getThisWeekRange();
-      return entries
-        .filter((e) => +new Date(e.date) >= +start && +new Date(e.date) < +end)
-        .reduce((s, e) => s + e.amount, 0);
+      picked = entries.filter((e) => +new Date(e.date) >= +start && +new Date(e.date) < +end);
+    } else if (period === "month") {
+      picked = entries.filter((e) => monthKey(e.date) === monthKey(monthDate));
+    } else {
+      picked = entries.filter((e) => new Date(e.date).getFullYear() === year);
     }
-    if (period === "month") {
-      return entries
-        .filter((e) => monthKey(e.date) === monthKey(monthDate))
-        .reduce((s, e) => s + e.amount, 0);
-    }
-    return entries
-      .filter((e) => new Date(e.date).getFullYear() === year)
-      .reduce((s, e) => s + e.amount, 0);
+    return [...picked].sort((a, b) => +new Date(b.date) - +new Date(a.date));
   }, [period, monthDate, year, entries]);
 
-  return { period, setPeriod, monthDate, setMonthDate, year, setYear, amount };
+  const amount = React.useMemo(() => rows.reduce((s, e) => s + e.amount, 0), [rows]);
+
+  return { period, setPeriod, monthDate, setMonthDate, year, setYear, amount, rows };
 }
 
 export function Dashboard({ data }: { data: AppData }) {
@@ -117,7 +128,10 @@ export function Dashboard({ data }: { data: AppData }) {
     [data.customers],
   );
   const allItems = React.useMemo(
-    () => data.customers.flatMap((c) => c.entries.filter((e) => e.type === "item")),
+    () =>
+      data.customers.flatMap((c) =>
+        c.entries.filter((e) => e.type === "item").map((e) => ({ ...e, name: c.name })),
+      ),
     [data.customers],
   );
 
@@ -319,15 +333,15 @@ function GroupSelect({
         sideOffset={6}
         className={
           "min-w-[12rem] rounded-2xl " +
-          (accent ? "border-primary-foreground/15 bg-primary text-primary-foreground shadow-xl" : "")
+          (accent
+            ? "border-primary-foreground/15 bg-primary text-primary-foreground shadow-xl"
+            : "")
         }
         // A darker shade of the card's teal for the menu on the accent card.
         // If a browser doesn't support color-mix this line is simply ignored
         // and the plain bg-primary above is used instead.
         style={
-          accent
-            ? { background: "color-mix(in srgb, var(--color-primary) 72%, black)" }
-            : undefined
+          accent ? { background: "color-mix(in srgb, var(--color-primary) 72%, black)" } : undefined
         }
       >
         {GROUPS.map((g) => (
@@ -418,8 +432,17 @@ function PeriodCard({
   filter: ReturnType<typeof usePeriodFilter>;
   accent?: boolean;
 }) {
+  const [historyOpen, setHistoryOpen] = React.useState(false);
   const periodLabel = (p: Period) =>
     p === "today" ? "Today" : p === "week" ? "Week" : p === "month" ? "Month" : "Year";
+  const periodTitle =
+    filter.period === "today"
+      ? "Today"
+      : filter.period === "week"
+        ? "This week"
+        : filter.period === "month"
+          ? filter.monthDate.toLocaleString("en-GB", { month: "long", year: "numeric" })
+          : String(filter.year);
 
   return (
     <div
@@ -515,7 +538,73 @@ function PeriodCard({
         </div>
       )}
 
-      <p className="mt-3 text-2xl font-black sm:text-3xl">{fmtMoney(filter.amount)}</p>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <p className="text-2xl font-black sm:text-3xl">{fmtMoney(filter.amount)}</p>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={
+            "h-9 w-9 shrink-0 " +
+            (accent
+              ? "text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground")
+          }
+          aria-label={`${label} history`}
+          onClick={() => setHistoryOpen(true)}
+        >
+          <History className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-h-[85vh] gap-3">
+          <DialogHeader>
+            <DialogTitle>
+              {label} history · {periodTitle}
+            </DialogTitle>
+            <DialogDescription>
+              {filter.rows.length} {filter.rows.length === 1 ? "entry" : "entries"} · total{" "}
+              {fmtMoney(filter.amount)}
+            </DialogDescription>
+          </DialogHeader>
+          {filter.rows.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              No {label.toLowerCase()} entries for this period.
+            </p>
+          ) : (
+            <ul className="-mr-2 max-h-[60vh] space-y-2 overflow-y-auto pr-2">
+              {filter.rows.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-border bg-card p-3 text-card-foreground"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{r.name}</p>
+                    {r.description && (
+                      <p className="truncate text-xs text-muted-foreground">{r.description}</p>
+                    )}
+                    <p className="text-[11px] text-muted-foreground">
+                      {fmtDate(r.date)} ·{" "}
+                      {new Date(r.date).toLocaleTimeString("en-GB", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                  <p
+                    className={
+                      "shrink-0 text-sm font-black " +
+                      (label === "Credit" ? "text-destructive" : "text-success")
+                    }
+                  >
+                    {fmtMoney(r.amount)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
