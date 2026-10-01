@@ -1,11 +1,45 @@
 import * as React from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { balanceOf, fmtMoney, monthKey, type AppData } from "@/lib/store";
+import {
+  balanceOf,
+  fmtMoney,
+  isDefaulter,
+  isStarCustomer,
+  monthKey,
+  paidTotalOf,
+  type AppData,
+  type Customer,
+} from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 type Range = "daily" | "weekly" | "monthly" | "yearly";
 type Period = "today" | "week" | "month" | "year";
+
+/** Which slice of the shop a top-row card is showing. "all" is the default
+ * and is the whole shop (regular customers + defaulters), so regular +
+ * defaulters always add up to all. */
+type Group = "all" | "regular" | "defaulters" | "star";
+
+const inGroup = (c: Customer, g: Group) => {
+  switch (g) {
+    case "all":
+      return true;
+    case "defaulters":
+      return isDefaulter(c);
+    case "star":
+      return isStarCustomer(c);
+    case "regular":
+      return !isDefaulter(c) && !isStarCustomer(c);
+  }
+};
 
 const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
 
@@ -62,7 +96,18 @@ function usePeriodFilter(entries: { date: string; amount: number }[]) {
 export function Dashboard({ data }: { data: AppData }) {
   const [range, setRange] = React.useState<Range>("daily");
 
-  const totalCredit = data.customers.reduce((s, c) => s + balanceOf(c), 0);
+  // Top-row cards each have their own All shop / Regular / Defaulters
+  // filter (independent of each other). Defaulters are flagged from the
+  // ledger screen; everyone not flagged is "regular". Amounts always come
+  // from the same balanceOf / paidTotalOf helpers as before, just summed
+  // over the selected group, so regular + defaulters === all shop.
+  const [outstandingGroup, setOutstandingGroup] = React.useState<Group>("all");
+  const [recoveryGroup, setRecoveryGroup] = React.useState<Group>("all");
+
+  const outstandingOf = (g: Group) =>
+    data.customers.filter((c) => inGroup(c, g)).reduce((s, c) => s + balanceOf(c), 0);
+  const recoveredOf = (g: Group) =>
+    data.customers.filter((c) => inGroup(c, g)).reduce((s, c) => s + paidTotalOf(c), 0);
 
   const allPayments = React.useMemo(
     () =>
@@ -76,21 +121,17 @@ export function Dashboard({ data }: { data: AppData }) {
     [data.customers],
   );
 
-  const allTimeRecovery = React.useMemo(
-    () => allPayments.reduce((s, p) => s + p.amount, 0),
-    [allPayments],
-  );
+  const defaulterCount = data.customers.filter(isDefaulter).length;
+  const shownOutstanding = outstandingOf(outstandingGroup);
+  const shownRecovery = recoveredOf(recoveryGroup);
 
-  // Recovery percentage: derived from totalCredit and allTimeRecovery, both
-  // already computed above -- no separate/independent sum of "all credit
-  // ever issued" is taken. This works because of the identity
-  // outstanding = issued - recovered (balanceOf is items minus payments
-  // per customer, summed), so issued = outstanding + recovered. Reusing the
-  // two figures already on screen elsewhere is exactly "the same financial
-  // source of truth", not a second calculation system.
-  const totalCreditIssued = totalCredit + allTimeRecovery;
-  const recoveryPercentage =
-    totalCreditIssued > 0 ? (allTimeRecovery / totalCreditIssued) * 100 : 0;
+  // Recovery percentage for the selected group: derived from that group's
+  // outstanding and recovered figures -- no separate sum of "all credit ever
+  // issued" is taken. This works because of the identity outstanding =
+  // issued - recovered (balanceOf is items minus payments per customer), so
+  // issued = outstanding + recovered, per group as much as for the whole shop.
+  const shownIssued = outstandingOf(recoveryGroup) + shownRecovery;
+  const recoveryPercentage = shownIssued > 0 ? (shownRecovery / shownIssued) * 100 : 0;
 
   const creditFilter = usePeriodFilter(allItems);
   const recoveryFilter = usePeriodFilter(allPayments);
@@ -147,15 +188,29 @@ export function Dashboard({ data }: { data: AppData }) {
 
   return (
     <div className="space-y-5">
-      {/* Row 1: Total Credit Outstanding (unchanged) / Credit Owners
-          (unchanged) / All-Time Recovery (now with a recovery %) */}
+      {/* Row 1: Total outstanding and All-time recovery each have an
+          All shop / Regular / Defaulters filter; Credit holders shows the
+          total plus how many of them are defaulters. */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total credit (outstanding)" value={fmtMoney(totalCredit)} accent />
-        <StatCard label="Credit holders" value={String(data.customers.length)} />
+        <StatCard
+          label="Total credit (outstanding)"
+          value={fmtMoney(shownOutstanding)}
+          accent
+          group={outstandingGroup}
+          onGroupChange={setOutstandingGroup}
+        />
+        <StatCard
+          label="Credit holders"
+          value={String(data.customers.length)}
+          sublabel={`${defaulterCount} ${defaulterCount === 1 ? "defaulter" : "defaulters"}`}
+          sublabelTone="destructive"
+        />
         <StatCard
           label="All-time recovery"
-          value={fmtMoney(allTimeRecovery)}
+          value={fmtMoney(shownRecovery)}
           sublabel={`${recoveryPercentage.toFixed(1)}% of credit issued`}
+          group={recoveryGroup}
+          onGroupChange={setRecoveryGroup}
         />
       </div>
 
@@ -223,32 +278,126 @@ export function Dashboard({ data }: { data: AppData }) {
   );
 }
 
+const GROUPS: { value: Group; label: string }[] = [
+  { value: "all", label: "All Shop" },
+  { value: "regular", label: "Regular Customers" },
+  { value: "defaulters", label: "Defaulters" },
+  { value: "star", label: "Star Customers" },
+];
+
+/** The "Customer Type: All Shop v" pill that sits in a card's header. Click
+ * it to open the All Shop / Regular Customers / Defaulters menu. On the
+ * teal (accent) card it is a light pill with a dark-teal menu; on a white
+ * card it is an outlined pill with the normal menu. */
+function GroupSelect({
+  group,
+  onChange,
+  accent,
+}: {
+  group: Group;
+  onChange: (g: Group) => void;
+  accent?: boolean | undefined;
+}) {
+  const current = GROUPS.find((g) => g.value === group)?.label ?? "All Shop";
+  return (
+    <Select value={group} onValueChange={(v) => onChange(v as Group)}>
+      <SelectTrigger
+        aria-label="Customer type filter"
+        className={
+          "ml-auto h-7 w-auto shrink-0 justify-start gap-1 rounded-full px-2.5 text-[11px] font-semibold shadow-none sm:px-3 sm:text-xs [&>svg]:opacity-100 " +
+          (accent
+            ? "border-transparent bg-primary-foreground text-primary ring-2 ring-primary-foreground/40"
+            : "border-primary/30 bg-background text-primary")
+        }
+      >
+        <span>
+          : <SelectValue>{current}</SelectValue>
+        </span>
+      </SelectTrigger>
+      <SelectContent
+        align="end"
+        sideOffset={6}
+        className={
+          "min-w-[12rem] rounded-2xl " +
+          (accent ? "border-primary-foreground/15 bg-primary text-primary-foreground shadow-xl" : "")
+        }
+        // A darker shade of the card's teal for the menu on the accent card.
+        // If a browser doesn't support color-mix this line is simply ignored
+        // and the plain bg-primary above is used instead.
+        style={
+          accent
+            ? { background: "color-mix(in srgb, var(--color-primary) 72%, black)" }
+            : undefined
+        }
+      >
+        {GROUPS.map((g) => (
+          <SelectItem
+            key={g.value}
+            value={g.value}
+            className={
+              "rounded-lg py-2 pl-3 pr-8 text-sm " +
+              (accent
+                ? "focus:bg-primary-foreground/15 focus:text-primary-foreground data-[state=checked]:font-semibold"
+                : "data-[state=checked]:font-semibold")
+            }
+          >
+            {g.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function StatCard({
   label,
   value,
   sublabel,
+  sublabelTone = "success",
   accent,
+  group,
+  onGroupChange,
 }: {
   label: string;
   value: string;
   sublabel?: string;
+  sublabelTone?: "success" | "destructive";
   accent?: boolean;
+  /** When both are given, the header shows the Customer Type pill/menu. */
+  group?: Group;
+  onGroupChange?: (g: Group) => void;
 }) {
   return (
     <div
       className={
-        "rounded-2xl border p-5 " +
+        "flex h-full flex-col rounded-2xl border p-5 " +
         (accent
           ? "border-primary/30 bg-primary text-primary-foreground"
           : "border-border bg-card text-card-foreground")
       }
     >
-      <p className={"text-xs font-medium " + (accent ? "opacity-80" : "text-muted-foreground")}>
-        {label}
-      </p>
+      {/* min-h keeps the big numbers lined up across the three cards even
+          though only two of them have the pill. */}
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <p className={"text-xs font-medium " + (accent ? "opacity-80" : "text-muted-foreground")}>
+          {label}
+        </p>
+        {group !== undefined && onGroupChange && (
+          <GroupSelect group={group} onChange={onGroupChange} accent={accent} />
+        )}
+      </div>
       <p className="mt-2 text-2xl font-black sm:text-3xl">{value}</p>
       {sublabel && (
-        <p className={"mt-1 text-sm font-semibold " + (accent ? "opacity-90" : "text-success")}>
+        <p
+          className={
+            "mt-1 text-sm font-semibold " +
+            (accent
+              ? "opacity-90"
+              : sublabelTone === "destructive"
+                ? "text-destructive"
+                : "text-success")
+          }
+        >
           {sublabel}
         </p>
       )}

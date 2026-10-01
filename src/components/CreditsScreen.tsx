@@ -14,10 +14,12 @@ import {
   findCustomerByName,
   fmtDateTime,
   fmtMoney,
+  isDefaulter,
+  isStarCustomer,
   type Customer,
   type Store,
 } from "@/lib/store";
-import { Plus, Search, UserRound } from "lucide-react";
+import { Plus, Search, Star, UserRound } from "lucide-react";
 
 export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Customer) => void }) {
   const [q, setQ] = React.useState("");
@@ -137,7 +139,12 @@ export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Cus
                   <UserRound className="h-5 w-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-foreground">{c.name}</p>
+                  <p className="flex items-center gap-1 truncate font-semibold text-foreground">
+                    {isStarCustomer(c) && (
+                      <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
+                    )}
+                    <span className="truncate">{c.name}</span>
+                  </p>
                   <p className="truncate text-xs text-muted-foreground">
                     {c.contact || "No contact"}
                   </p>
@@ -149,6 +156,14 @@ export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Cus
                   <p className="text-lg font-black text-destructive">{fmtMoney(balanceOf(c))}</p>
                 </div>
                 <p className="text-right text-[11px] text-muted-foreground">
+                  {isDefaulter(c) && (
+                    <>
+                      <span className="text-[10px] font-bold tracking-wide text-destructive">
+                        DEFAULTER
+                      </span>
+                      <br />
+                    </>
+                  )}
                   Updated
                   <br />
                   {fmtDateTime(c.updatedAt)}

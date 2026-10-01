@@ -49,6 +49,18 @@ export interface Entry {
   description: string;
   amount: number;
   date: string; // ISO
+  /**
+   * PAYMENT ENTRIES ONLY. The customer's total outstanding balance at the
+   * exact moment this payment was recorded -- captured once, at that
+   * moment, and never recalculated afterwards, so it stays a fixed
+   * historical snapshot even as later items/payments are added or the
+   * customer's current balanceOf() changes. Shown next to the entry as
+   * "Balance: X, Paid: Y, Remaining: Z" (Z = balanceBefore - amount).
+   * Optional/undefined for item entries and for payments recorded before
+   * this feature existed -- those just render without the snapshot line,
+   * no data migration needed.
+   */
+  balanceBefore?: number | undefined;
 }
 
 export interface Customer {
@@ -58,6 +70,19 @@ export interface Customer {
   entries: Entry[];
   paidMonths: string[]; // e.g. "2026-08"
   updatedAt: string; // ISO
+  /**
+   * A customer is exactly one of three categories: defaulter, star
+   * customer, or (when both flags below are absent/false) regular. The two
+   * flags are kept mutually exclusive by every mutator below -- setting
+   * one always clears the other in the same update -- so a customer is
+   * never counted in two buckets on the dashboard.
+   */
+  /** Long-term non-payer. Missing/undefined === not a defaulter. */
+  defaulter?: boolean;
+  /** ISO time the defaulter flag was set (informational; not used in any total). */
+  defaulterSince?: string | null;
+  /** Pays on a regular monthly cycle. Missing/undefined === not a star customer. */
+  starCustomer?: boolean;
 }
 
 export interface HistoryItem {
@@ -90,7 +115,7 @@ export interface AppData {
  */
 const KEY = "zeeshan-medical-khatta-v1";
 
-export const STORE_PASSWORD = "RANDOMSTRING";
+export const STORE_PASSWORD = "store123";
 
 const defaultData: AppData = {
   customers: [],
@@ -124,6 +149,10 @@ export const balanceOf = (c: Customer) =>
 
 export const paidTotalOf = (c: Customer) =>
   c.entries.filter((e) => e.type === "payment").reduce((s, e) => s + e.amount, 0);
+
+export const isDefaulter = (c: Customer) => c.defaulter === true;
+
+export const isStarCustomer = (c: Customer) => c.starCustomer === true;
 
 export const lastPaymentOf = (c: Customer) =>
   c.entries
@@ -306,6 +335,9 @@ function subscribeAppData(
               paidMonths: cData.paidMonths ?? [],
               updatedAt: tsToIso(cData.updatedAt),
               entries: existing?.entries ?? [],
+              defaulter: cData.defaulter === true,
+              defaulterSince: cData.defaulter === true ? (cData.defaulterSince ?? null) : null,
+              starCustomer: cData.starCustomer === true,
             });
           }
           return { ...d, customers: nextCustomers };
@@ -335,6 +367,10 @@ function subscribeAppData(
                       description: eData.description,
                       amount: paisaToRupees(eData.amountPaisa),
                       date: eData.date,
+                      balanceBefore:
+                        eData.balanceBeforePaisa != null
+                          ? paisaToRupees(eData.balanceBeforePaisa)
+                          : undefined,
                     });
                   }
                   return { ...c, entries };
@@ -516,6 +552,8 @@ export async function fetchDeletedCustomers(): Promise<DeletedCustomer[]> {
           description: eData.description,
           amount: paisaToRupees(eData.amountPaisa),
           date: eData.date,
+          balanceBefore:
+            eData.balanceBeforePaisa != null ? paisaToRupees(eData.balanceBeforePaisa) : undefined,
         });
       }
       results.push({
@@ -548,6 +586,33 @@ async function fsRestoreCustomer(customerId: string) {
     });
   } catch (err) {
     console.error("[store] Firestore: restore customer failed", customerId, err);
+  }
+}
+
+/**
+ * Sets the customer's category (see the comment on Customer.defaulter/
+ * starCustomer). Always writes all three fields together so "defaulter"
+ * and "starCustomer" can never both end up true, even if the app closes
+ * mid-write and a stale local optimistic update lingers. Only ever touches
+ * these fields on the customer doc -- never entries -- so balances are
+ * unaffected.
+ */
+async function fsSetCategory(
+  customerId: string,
+  category: "regular" | "defaulter" | "star",
+  since: string | null,
+) {
+  const services = getFirebase();
+  if (!services) return;
+  try {
+    await updateDoc(doc(services.db, customerDocPath(customerId)), {
+      defaulter: category === "defaulter",
+      defaulterSince: category === "defaulter" ? since : null,
+      starCustomer: category === "star",
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("[store] Firestore: set category failed", customerId, err);
   }
 }
 
@@ -596,6 +661,7 @@ async function fsCreateEntry(customerId: string, entryId: string, entry: Omit<En
       description: entry.description,
       amountPaisa: rupeesToPaisa(entry.amount),
       date: entry.date,
+      balanceBeforePaisa: entry.balanceBefore != null ? rupeesToPaisa(entry.balanceBefore) : null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       deviceId: getDeviceId(),
@@ -840,6 +906,41 @@ export function useAppStore() {
         }));
         log(`Marked ${month} as unpaid`);
         void fsMarkUnpaid(customerId, month);
+      },
+      markDefaulter(customerId: string) {
+        const name = dataRef.current.customers.find((x) => x.id === customerId)?.name ?? "";
+        const since = new Date().toISOString();
+        updateCustomer(customerId, (c) => ({
+          ...c,
+          defaulter: true,
+          defaulterSince: since,
+          starCustomer: false,
+        }));
+        log(`Marked ${name} as defaulter`);
+        void fsSetCategory(customerId, "defaulter", since);
+      },
+      unmarkDefaulter(customerId: string) {
+        const name = dataRef.current.customers.find((x) => x.id === customerId)?.name ?? "";
+        updateCustomer(customerId, (c) => ({ ...c, defaulter: false, defaulterSince: null }));
+        log(`Removed defaulter mark from ${name}`);
+        void fsSetCategory(customerId, "regular", null);
+      },
+      markStarCustomer(customerId: string) {
+        const name = dataRef.current.customers.find((x) => x.id === customerId)?.name ?? "";
+        updateCustomer(customerId, (c) => ({
+          ...c,
+          starCustomer: true,
+          defaulter: false,
+          defaulterSince: null,
+        }));
+        log(`Marked ${name} as star customer`);
+        void fsSetCategory(customerId, "star", null);
+      },
+      unmarkStarCustomer(customerId: string) {
+        const name = dataRef.current.customers.find((x) => x.id === customerId)?.name ?? "";
+        updateCustomer(customerId, (c) => ({ ...c, starCustomer: false }));
+        log(`Removed star customer mark from ${name}`);
+        void fsSetCategory(customerId, "regular", null);
       },
       setSettings(patch: Partial<Settings>) {
         setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));

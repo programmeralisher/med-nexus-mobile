@@ -18,7 +18,7 @@ import {
 import { balanceOf, fmtDate, fmtMoney, type Customer, type Store } from "@/lib/store";
 import { downloadLedgerPdf, type Period } from "@/lib/pdf";
 import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
-import { ArrowLeft, Download, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Plus, Trash2, Undo2, UserX } from "lucide-react";
 
 export function LedgerScreen({
   store,
@@ -56,6 +56,7 @@ export function LedgerScreen({
   // it. One shared dialog instance, reused for whichever entry id is
   // currently pending, rather than one dialog per row.
   const [deleteEntryId, setDeleteEntryId] = React.useState<string | null>(null);
+  const [defaulterConfirmOpen, setDefaulterConfirmOpen] = React.useState(false);
 
   if (!customer) return null;
   const c: Customer = customer;
@@ -83,6 +84,10 @@ export function LedgerScreen({
       description: payNote.trim() || "Payment received",
       amount: amt,
       date: new Date().toISOString(),
+      // `total` is this customer's balance as shown on screen right now,
+      // before this payment is added -- captured once here as a permanent
+      // snapshot (see the comment on Entry.balanceBefore in lib/store.ts).
+      balanceBefore: total,
     });
     setPayAmount("");
     setPayNote("");
@@ -124,7 +129,14 @@ export function LedgerScreen({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-black text-foreground">{c.name}</h2>
+            <h2 className="flex items-center gap-2 text-lg font-black text-foreground">
+              <span className="truncate">{c.name}</span>
+              {c.defaulter && (
+                <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+                  Defaulter
+                </span>
+              )}
+            </h2>
             <p className="truncate text-xs text-muted-foreground">{c.contact || "No contact"}</p>
           </div>
         </div>
@@ -142,6 +154,19 @@ export function LedgerScreen({
           <Button variant="outline" onClick={() => downloadLedgerPdf(c, period)}>
             <Download className="h-4 w-4" /> PDF
           </Button>
+          {c.defaulter ? (
+            <Button variant="outline" onClick={() => store.unmarkDefaulter(c.id)}>
+              <Undo2 className="h-4 w-4" /> Undo defaulter
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="border-destructive/40 text-destructive hover:text-destructive"
+              onClick={() => setDefaulterConfirmOpen(true)}
+            >
+              <UserX className="h-4 w-4" /> Mark as defaulter
+            </Button>
+          )}
         </div>
       </div>
 
@@ -184,7 +209,8 @@ export function LedgerScreen({
               </tr>
             )}
             {entries.map((e, i) => (
-              <tr key={e.id} className="border-t border-border">
+              <React.Fragment key={e.id}>
+              <tr className="border-t border-border">
                 <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
                 <td className="px-3 py-1.5">
                   <input
@@ -226,6 +252,16 @@ export function LedgerScreen({
                   </button>
                 </td>
               </tr>
+              {e.type === "payment" && e.balanceBefore !== undefined && (
+                <tr className="border-t border-border/50 bg-success/5">
+                  <td />
+                  <td colSpan={4} className="px-3 pb-1.5 text-xs font-medium text-success">
+                    Balance: {fmtMoney(e.balanceBefore)}, Paid: {fmtMoney(e.amount)}, Remaining:{" "}
+                    {fmtMoney(e.balanceBefore - e.amount)}
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -266,6 +302,30 @@ export function LedgerScreen({
           <DialogFooter>
             <Button variant="success" className="w-full" onClick={recordPayment}>
               Save payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={defaulterConfirmOpen} onOpenChange={setDefaulterConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark {c.name} as defaulter?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Their outstanding {fmtMoney(total)} will be counted in the Defaulters card on the home
+            screen. You can undo this any time; no ledger entries are changed.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => {
+                store.markDefaulter(c.id);
+                setDefaulterConfirmOpen(false);
+              }}
+            >
+              Mark as defaulter
             </Button>
           </DialogFooter>
         </DialogContent>

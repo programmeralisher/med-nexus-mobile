@@ -1,9 +1,24 @@
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
-import { balanceOf, findCustomerByName, fmtMoney, type Customer, type Store } from "@/lib/store";
-import { ArrowLeft, Search, User } from "lucide-react";
+import {
+  balanceOf,
+  findCustomerByName,
+  fmtMoney,
+  isDefaulter,
+  isStarCustomer,
+  type Customer,
+  type Store,
+} from "@/lib/store";
+import { ArrowLeft, Search, Star, Undo2, User, UserX } from "lucide-react";
 
 /**
  * §6a "Manage Credit Owners" -- the one deliberate new feature alongside the
@@ -35,6 +50,8 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
   const [contact, setContact] = React.useState("");
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [dupError, setDupError] = React.useState<string | null>(null);
+  const [defaulterConfirmOpen, setDefaulterConfirmOpen] = React.useState(false);
+  const [starConfirmOpen, setStarConfirmOpen] = React.useState(false);
 
   const selected = store.data.customers.find((c) => c.id === selectedId) ?? null;
 
@@ -118,6 +135,103 @@ export function ManageCreditOwnersScreen({ store, onBack }: { store: Store; onBa
             Save changes
           </Button>
         </div>
+
+        {/* Regular / Defaulter / Star Customer is a third, independent
+            category -- see fsSetCategory in lib/store.ts. Marking either
+            one here always clears the other, so a customer is never both. */}
+        <div className="mt-4 space-y-2 rounded-2xl border border-border bg-card p-4">
+          <p className="text-xs font-medium text-muted-foreground">Customer type</p>
+          {isDefaulter(selected) && (
+            <p className="text-sm font-semibold text-destructive">Currently marked: Defaulter</p>
+          )}
+          {isStarCustomer(selected) && (
+            <p className="text-sm font-semibold text-primary">Currently marked: Star Customer</p>
+          )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {isDefaulter(selected) ? (
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => store.unmarkDefaulter(selected.id)}
+              >
+                <Undo2 className="h-4 w-4" /> Unmark as defaulter
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="flex-1 border-destructive/40 text-destructive hover:text-destructive"
+                onClick={() => setDefaulterConfirmOpen(true)}
+              >
+                <UserX className="h-4 w-4" /> Mark as defaulter
+              </Button>
+            )}
+            {isStarCustomer(selected) ? (
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => store.unmarkStarCustomer(selected.id)}
+              >
+                <Undo2 className="h-4 w-4" /> Unmark as star customer
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="flex-1 border-primary/40 text-primary hover:text-primary"
+                onClick={() => setStarConfirmOpen(true)}
+              >
+                <Star className="h-4 w-4" /> Mark as star customer
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <Dialog open={defaulterConfirmOpen} onOpenChange={setDefaulterConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Mark {selected.name} as defaulter?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Their outstanding {fmtMoney(balanceOf(selected))} will be counted in the Defaulters
+              filter on the home screen. This clears any star-customer mark. You can undo this any
+              time; no ledger entries are changed.
+            </p>
+            <DialogFooter>
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={() => {
+                  store.markDefaulter(selected.id);
+                  setDefaulterConfirmOpen(false);
+                }}
+              >
+                Mark as defaulter
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={starConfirmOpen} onOpenChange={setStarConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Mark {selected.name} as star customer?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              They'll be counted in the Star Customers filter on the home screen. This clears any
+              defaulter mark. You can undo this any time; no ledger entries are changed.
+            </p>
+            <DialogFooter>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  store.markStarCustomer(selected.id);
+                  setStarConfirmOpen(false);
+                }}
+              >
+                Mark as star customer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <StepUpPasswordDialog
           open={confirmOpen}

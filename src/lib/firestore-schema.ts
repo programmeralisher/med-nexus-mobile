@@ -78,6 +78,24 @@ export interface CustomerDoc {
    */
   deleted: boolean;
   deletedAt: Timestamp | null;
+  /**
+   * Long-term non-payer flag ("defaulter"). OPTIONAL on purpose: every
+   * customer doc that already exists in Firestore has neither field, and
+   * that must keep meaning "not a defaulter" -- so readers treat a missing
+   * value as false, and no data migration is needed. Toggled from the
+   * ledger screen. `defaulterSince` is an ISO string (same style as
+   * EntryDoc.date) recording when the flag was set -- informational only;
+   * the dashboard's Regular / Defaulters split is based on the flag alone.
+   */
+  defaulter?: boolean;
+  defaulterSince?: string | null;
+  /**
+   * Pays on a regular monthly cycle ("star customer"). OPTIONAL for the
+   * same reason as defaulter above: missing means false, no migration
+   * needed. Mutually exclusive with defaulter -- fsSetCategory in store.ts
+   * always writes both fields together so a customer is never both.
+   */
+  starCustomer?: boolean;
 }
 
 export interface EntryDoc {
@@ -122,6 +140,14 @@ export interface EntryDoc {
   deviceId: string;
   deleted: boolean;
   deletedAt: Timestamp | null;
+  /**
+   * PAYMENT ENTRIES ONLY, optional. The customer's outstanding balance at
+   * the moment this payment was recorded, in paisa (same integer-paisa
+   * reasoning as amountPaisa above). A fixed historical snapshot, not
+   * recalculated later. null/absent for item entries and for payments
+   * written before this field existed.
+   */
+  balanceBeforePaisa?: number | null;
 }
 
 export interface HistoryDoc {
