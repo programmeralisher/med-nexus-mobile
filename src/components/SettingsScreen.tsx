@@ -21,6 +21,7 @@ import {
   Upload,
   UserCog,
   ArchiveRestore,
+  NotebookPen,
 } from "lucide-react";
 
 export function SettingsScreen({
@@ -28,12 +29,14 @@ export function SettingsScreen({
   onManageOwners,
   onBulkImport,
   onRecoverDeleted,
+  onNotes,
   onSignOut,
 }: {
   store: Store;
   onManageOwners: () => void;
   onBulkImport: () => void;
   onRecoverDeleted: () => void;
+  onNotes: () => void;
   onSignOut: () => void;
 }) {
   const { settings } = store.data;
@@ -112,6 +115,12 @@ export function SettingsScreen({
         </Button>
         <Button variant="outline" className="mt-2 h-11 w-full justify-start" onClick={onBulkImport}>
           <Upload className="h-4 w-4" /> Bulk Entry
+        </Button>
+      </Section>
+
+      <Section title="Additional notes">
+        <Button variant="outline" className="h-11 w-full justify-start" onClick={onNotes}>
+          <NotebookPen className="h-4 w-4" /> Additional notes (personal)
         </Button>
       </Section>
 
