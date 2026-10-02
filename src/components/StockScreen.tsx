@@ -17,7 +17,8 @@ function optNum(s: string): number | null | undefined {
 const EMPTY = { name: "", perPacket: "", price: "", quantity: "", notes: "", available: true };
 
 export function StockScreen({ onBack }: { onBack: () => void }) {
-  const { items, tags, ready, saveItem, removeItem, setAvailable, addTag, removeTag } = useStock();
+  const { items, tags, ready, syncMessage, saveItem, removeItem, setAvailable, addTag, removeTag } =
+    useStock();
 
   const [tagId, setTagId] = React.useState("tablet");
   const [form, setForm] = React.useState(EMPTY);
@@ -149,6 +150,12 @@ export function StockScreen({ onBack }: { onBack: () => void }) {
         <p className="mt-3 text-xs text-muted-foreground">Total items</p>
         <p className="text-2xl font-black text-foreground">{items.length}</p>
       </div>
+
+      {syncMessage && (
+        <p className="break-words rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+          {syncMessage}
+        </p>
+      )}
 
       <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
         <p className="text-sm font-semibold text-foreground">
