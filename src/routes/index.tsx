@@ -11,6 +11,7 @@ import { ManageCreditOwnersScreen } from "@/components/ManageCreditOwnersScreen"
 import { BulkImportScreen } from "@/components/BulkImportScreen";
 import { RecoverDeletedScreen } from "@/components/RecoverDeletedScreen";
 import { NotesScreen } from "@/components/NotesScreen";
+import { StockScreen } from "@/components/StockScreen";
 import { useAppStore } from "@/lib/store";
 import { isAppUnlocked, setAppUnlocked } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ function Index() {
   const [bulkImportOpen, setBulkImportOpen] = React.useState(false);
   const [recoverDeletedOpen, setRecoverDeletedOpen] = React.useState(false);
   const [notesOpen, setNotesOpen] = React.useState(false);
+  const [stockOpen, setStockOpen] = React.useState(false);
 
   if (!authed)
     return (
@@ -86,6 +88,7 @@ function Index() {
               setBulkImportOpen(false);
               setRecoverDeletedOpen(false);
               setNotesOpen(false);
+              setStockOpen(false);
             }}
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
@@ -132,6 +135,8 @@ function Index() {
             <ManageCreditOwnersScreen store={store} onBack={() => setManageOwnersOpen(false)} />
           ) : bulkImportOpen ? (
             <BulkImportScreen store={store} onBack={() => setBulkImportOpen(false)} />
+          ) : stockOpen ? (
+            <StockScreen onBack={() => setStockOpen(false)} />
           ) : notesOpen ? (
             <NotesScreen onBack={() => setNotesOpen(false)} />
           ) : recoverDeletedOpen ? (
@@ -143,6 +148,7 @@ function Index() {
               onBulkImport={() => setBulkImportOpen(true)}
               onRecoverDeleted={() => setRecoverDeletedOpen(true)}
               onNotes={() => setNotesOpen(true)}
+              onStock={() => setStockOpen(true)}
               onSignOut={() => {
                 setAppUnlocked(false);
                 setAuthed(false);
@@ -151,6 +157,7 @@ function Index() {
                 setBulkImportOpen(false);
                 setRecoverDeletedOpen(false);
                 setNotesOpen(false);
+                setStockOpen(false);
               }}
             />
           ))}
@@ -172,6 +179,7 @@ function Index() {
                   setBulkImportOpen(false);
                   setRecoverDeletedOpen(false);
                   setNotesOpen(false);
+                  setStockOpen(false);
                 }
               }}
               className={

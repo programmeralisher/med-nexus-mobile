@@ -22,6 +22,7 @@ import {
   UserCog,
   ArchiveRestore,
   NotebookPen,
+  Package,
 } from "lucide-react";
 
 export function SettingsScreen({
@@ -30,6 +31,7 @@ export function SettingsScreen({
   onBulkImport,
   onRecoverDeleted,
   onNotes,
+  onStock,
   onSignOut,
 }: {
   store: Store;
@@ -37,6 +39,7 @@ export function SettingsScreen({
   onBulkImport: () => void;
   onRecoverDeleted: () => void;
   onNotes: () => void;
+  onStock: () => void;
   onSignOut: () => void;
 }) {
   const { settings } = store.data;
@@ -121,6 +124,12 @@ export function SettingsScreen({
       <Section title="Additional notes">
         <Button variant="outline" className="h-11 w-full justify-start" onClick={onNotes}>
           <NotebookPen className="h-4 w-4" /> Additional notes (personal)
+        </Button>
+      </Section>
+
+      <Section title="Stock">
+        <Button variant="outline" className="h-11 w-full justify-start" onClick={onStock}>
+          <Package className="h-4 w-4" /> Stock (personal inventory)
         </Button>
       </Section>
 
