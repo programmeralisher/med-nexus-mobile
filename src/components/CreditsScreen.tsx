@@ -30,8 +30,24 @@ export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Cus
   const [contact, setContact] = React.useState("");
   const [dupWarning, setDupWarning] = React.useState<Customer | null>(null);
 
-  const list = store.data.customers.filter((c) =>
-    c.name.toLowerCase().includes(q.trim().toLowerCase()),
+  const [filter, setFilter] = React.useState<"all" | "star" | "regular" | "defaulter">("all");
+
+  // Star and Defaulter are the existing flags; Regular = neither of them.
+  const matches = (c: Customer, f: typeof filter) =>
+    f === "all" ||
+    (f === "star" && isStarCustomer(c)) ||
+    (f === "defaulter" && isDefaulter(c)) ||
+    (f === "regular" && !isStarCustomer(c) && !isDefaulter(c));
+
+  const filters: { id: typeof filter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "star", label: "Star" },
+    { id: "regular", label: "Regular" },
+    { id: "defaulter", label: "Defaulters" },
+  ];
+
+  const list = store.data.customers.filter(
+    (c) => matches(c, filter) && c.name.toLowerCase().includes(q.trim().toLowerCase()),
   );
 
   const create = () => {
@@ -124,9 +140,33 @@ export function CreditsScreen({ store, onOpen }: { store: Store; onOpen: (c: Cus
         </Dialog>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        {filters.map((f) => {
+          const on = filter === f.id;
+          const count = store.data.customers.filter((c) => matches(c, f.id)).length;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              className={
+                "inline-flex h-8 items-center rounded-full px-3 text-sm font-medium transition-colors " +
+                (on
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-card text-foreground hover:bg-accent")
+              }
+            >
+              {f.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       {list.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-          No credit holders yet. Tap “Add new credit” to make a ledger.
+          {store.data.customers.length === 0
+            ? "No credit holders yet. Tap “Add new credit” to make a ledger."
+            : "No customers match this filter."}
         </p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
