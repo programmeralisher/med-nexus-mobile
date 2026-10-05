@@ -12,6 +12,8 @@ import { BulkImportScreen } from "@/components/BulkImportScreen";
 import { RecoverDeletedScreen } from "@/components/RecoverDeletedScreen";
 import { NotesScreen } from "@/components/NotesScreen";
 import { StockScreen } from "@/components/StockScreen";
+import { ActivityScreen } from "@/components/ActivityScreen";
+import { useDeviceHeartbeat } from "@/lib/activity";
 import { useAppStore } from "@/lib/store";
 import { isAppUnlocked, setAppUnlocked } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,7 @@ type Tab = "dashboard" | "credits" | "reports" | "messages" | "settings";
 
 function Index() {
   const store = useAppStore();
+  useDeviceHeartbeat();
   // Persistent login / session restore: seed `authed` from the local app
   // password gate (see isAppUnlocked/setAppUnlocked in lib/auth.ts) via
   // useState's lazy-initializer form, the same pattern already used for
@@ -57,6 +60,7 @@ function Index() {
   const [recoverDeletedOpen, setRecoverDeletedOpen] = React.useState(false);
   const [notesOpen, setNotesOpen] = React.useState(false);
   const [stockOpen, setStockOpen] = React.useState(false);
+  const [activityOpen, setActivityOpen] = React.useState(false);
 
   if (!authed)
     return (
@@ -89,6 +93,7 @@ function Index() {
               setRecoverDeletedOpen(false);
               setNotesOpen(false);
               setStockOpen(false);
+              setActivityOpen(false);
             }}
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
@@ -135,6 +140,8 @@ function Index() {
             <ManageCreditOwnersScreen store={store} onBack={() => setManageOwnersOpen(false)} />
           ) : bulkImportOpen ? (
             <BulkImportScreen store={store} onBack={() => setBulkImportOpen(false)} />
+          ) : activityOpen ? (
+            <ActivityScreen onBack={() => setActivityOpen(false)} />
           ) : stockOpen ? (
             <StockScreen onBack={() => setStockOpen(false)} />
           ) : notesOpen ? (
@@ -149,6 +156,7 @@ function Index() {
               onRecoverDeleted={() => setRecoverDeletedOpen(true)}
               onNotes={() => setNotesOpen(true)}
               onStock={() => setStockOpen(true)}
+              onActivity={() => setActivityOpen(true)}
               onSignOut={() => {
                 setAppUnlocked(false);
                 setAuthed(false);
@@ -158,6 +166,7 @@ function Index() {
                 setRecoverDeletedOpen(false);
                 setNotesOpen(false);
                 setStockOpen(false);
+                setActivityOpen(false);
               }}
             />
           ))}
@@ -180,6 +189,7 @@ function Index() {
                   setRecoverDeletedOpen(false);
                   setNotesOpen(false);
                   setStockOpen(false);
+                  setActivityOpen(false);
                 }
               }}
               className={

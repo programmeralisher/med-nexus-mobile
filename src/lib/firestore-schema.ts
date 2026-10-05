@@ -153,6 +153,9 @@ export interface EntryDoc {
 export interface HistoryDoc {
   at: Timestamp;
   text: string;
+  /** Anonymous Firebase UID of the device that made the change (absent on older entries). */
+  deviceUid?: string;
+  deviceName?: string;
 }
 
 export interface SettingsDoc {

@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { getFirebase } from "./firebase";
 import { ensureSignedIn, getDeviceId } from "./auth";
+import { getCurrentDevice } from "./activity";
 import {
   customerDocPath,
   customersCollectionPath,
@@ -751,7 +752,13 @@ async function fsAddHistory(historyId: string, text: string) {
   const services = getFirebase();
   if (!services) return;
   try {
-    await setDoc(doc(services.db, historyDocPath(historyId)), { text, at: serverTimestamp() });
+    const dev = getCurrentDevice();
+    await setDoc(doc(services.db, historyDocPath(historyId)), {
+      text,
+      at: serverTimestamp(),
+      ...(dev.uid ? { deviceUid: dev.uid } : {}),
+      ...(dev.name ? { deviceName: dev.name } : {}),
+    });
   } catch (err) {
     console.error("[store] Firestore: add history failed", historyId, err);
   }
@@ -881,13 +888,28 @@ export function useAppStore() {
         }));
         void fsUpdateEntry(customerId, entryId, patch);
         void fsTouchCustomer(customerId);
+        const cust = dataRef.current.customers.find((c) => c.id === customerId);
+        const ent = cust?.entries.find((e) => e.id === entryId);
+        const what =
+          ent && patch.amount !== undefined
+            ? `amount of "${ent.description || ent.type}" from ${fmtMoney(ent.amount)} to ${fmtMoney(patch.amount)}`
+            : ent && patch.description !== undefined
+              ? `description "${ent.description}" to "${patch.description}"`
+              : "an entry";
+        log(`Edited ${what} in ${cust?.name ?? "a"}'s ledger`);
       },
       removeEntry(customerId: string, entryId: string) {
+        const cust = dataRef.current.customers.find((c) => c.id === customerId);
+        const ent = cust?.entries.find((e) => e.id === entryId);
         updateCustomer(customerId, (c) => ({
           ...c,
           entries: c.entries.filter((e) => e.id !== entryId),
         }));
-        log(`Erased an entry from a ledger`);
+        log(
+          ent && cust
+            ? `Deleted ${ent.type === "payment" ? "payment" : `"${ent.description}"`} ${fmtMoney(ent.amount)} from ${cust.name}'s ledger`
+            : `Erased an entry from a ledger`,
+        );
         void fsSoftDeleteEntry(customerId, entryId);
         void fsTouchCustomer(customerId);
       },
