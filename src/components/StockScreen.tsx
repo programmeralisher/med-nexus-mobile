@@ -225,7 +225,7 @@ export function StockScreen({ onBack }: { onBack: () => void }) {
             className={isPacket ? "" : "sm:col-span-2"}
             value={form.name}
             onChange={(e) => set({ name: e.target.value })}
-            placeholder={`${activeTag?.name ?? "Item"} name with power, e.g. Cefim 200mg *`}
+            placeholder={`${activeTag?.name ?? "Item"} name with power, e.g. 200mg *`}
           />
           {isPacket && (
             <Input
