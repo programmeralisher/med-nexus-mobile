@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { STORE_PASSWORD, balanceOf, fmtDateTime, fmtMoney, type Store } from "@/lib/store";
 import { downloadBackupPdf } from "@/lib/pdf";
+import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
 import {
   Download,
   History,
@@ -25,6 +26,9 @@ import {
   Package,
   Activity,
 } from "lucide-react";
+
+/** Hardcoded lock for the Devices & activity screen. */
+const ACTIVITY_PASSWORD = "admin";
 
 export function SettingsScreen({
   store,
@@ -45,6 +49,7 @@ export function SettingsScreen({
   onActivity: () => void;
   onSignOut: () => void;
 }) {
+  const [activityGateOpen, setActivityGateOpen] = React.useState(false);
   const { settings } = store.data;
   const [wa, setWa] = React.useState(settings.whatsapp);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -137,10 +142,25 @@ export function SettingsScreen({
       </Section>
 
       <Section title="Devices & activity">
-        <Button variant="outline" className="h-11 w-full justify-start" onClick={onActivity}>
+        <Button
+          variant="outline"
+          className="h-11 w-full justify-start"
+          onClick={() => setActivityGateOpen(true)}
+        >
           <Activity className="h-4 w-4" /> Devices &amp; recent activity
         </Button>
       </Section>
+
+      <StepUpPasswordDialog
+        open={activityGateOpen}
+        onOpenChange={setActivityGateOpen}
+        title="Devices & activity"
+        description="Enter the password to view devices and activity."
+        confirmLabel="Open"
+        password={ACTIVITY_PASSWORD}
+        placeholder="Enter password"
+        onConfirm={onActivity}
+      />
 
       <Section title="Delete a credit">
         <Button

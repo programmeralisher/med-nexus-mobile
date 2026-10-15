@@ -42,6 +42,9 @@ export const Route = createFileRoute("/")({
 
 type Tab = "dashboard" | "credits" | "reports" | "messages" | "settings";
 
+// useLayoutEffect warns/does nothing during SSR; this app is server-rendered.
+const useIsoLayoutEffect = typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
 function Index() {
   const store = useAppStore();
   useDeviceHeartbeat();
@@ -61,6 +64,41 @@ function Index() {
   const [notesOpen, setNotesOpen] = React.useState(false);
   const [stockOpen, setStockOpen] = React.useState(false);
   const [activityOpen, setActivityOpen] = React.useState(false);
+
+  // Credits list: remember where the user was scrolled to when a ledger is
+  // opened, and put them back there on Back (instead of the top of the list).
+  const creditsScrollY = React.useRef(0);
+  const restoreCreditsScroll = React.useRef(false);
+  const openLedger = (id: string) => {
+    creditsScrollY.current = window.scrollY;
+    setLedgerId(id);
+  };
+  const closeLedger = () => {
+    restoreCreditsScroll.current = true;
+    setLedgerId(null);
+  };
+  useIsoLayoutEffect(() => {
+    if (ledgerId) {
+      window.scrollTo(0, 0); // a ledger always opens at its top
+    } else if (restoreCreditsScroll.current) {
+      restoreCreditsScroll.current = false;
+      window.scrollTo(0, creditsScrollY.current);
+    }
+  }, [ledgerId]);
+
+  // Bottom nav height -> CSS variable, so sticky bars (the ledger's Total
+  // amount) can sit exactly above the nav instead of hiding behind it.
+  const navRef = React.useRef<HTMLElement | null>(null);
+  React.useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const set = () =>
+      document.documentElement.style.setProperty("--bottom-nav-h", `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [authed]);
 
   if (!authed)
     return (
@@ -126,12 +164,16 @@ function Index() {
           </div>
         )}
 
-        {tab === "credits" &&
-          (ledgerId ? (
-            <LedgerScreen store={store} customerId={ledgerId} onBack={() => setLedgerId(null)} />
-          ) : (
-            <CreditsScreen store={store} onOpen={(c) => setLedgerId(c.id)} />
-          ))}
+        {tab === "credits" && (
+          <>
+            {/* Stays mounted (just hidden) while a ledger is open, so the search
+                text and filter chips survive going into a ledger and back. */}
+            <div hidden={!!ledgerId}>
+              <CreditsScreen store={store} onOpen={(c) => openLedger(c.id)} />
+            </div>
+            {ledgerId && <LedgerScreen store={store} customerId={ledgerId} onBack={closeLedger} />}
+          </>
+        )}
 
         {tab === "reports" && <ReportsScreen store={store} />}
         {tab === "messages" && <MessagesScreen store={store} />}
@@ -172,7 +214,10 @@ function Index() {
           ))}
       </main>
 
-      <nav className="sticky bottom-0 z-20 border-t border-border bg-card/95 backdrop-blur">
+      <nav
+        ref={navRef}
+        className="sticky bottom-0 z-20 border-t border-border bg-card/95 backdrop-blur"
+      >
         <div className="mx-auto grid max-w-5xl grid-cols-5 gap-1 px-2 py-2">
           {[
             { id: "dashboard" as Tab, label: "Home", icon: <Stethoscope className="h-4 w-4" /> },

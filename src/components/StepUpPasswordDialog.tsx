@@ -34,6 +34,8 @@ export function StepUpPasswordDialog({
   description,
   confirmLabel = "Confirm",
   destructive = false,
+  password = STORE_PASSWORD,
+  placeholder = "Enter shop password",
   onConfirm,
 }: {
   open: boolean;
@@ -42,6 +44,9 @@ export function StepUpPasswordDialog({
   description?: string;
   confirmLabel?: string;
   destructive?: boolean;
+  /** Password to check against. Defaults to the shop password. */
+  password?: string;
+  placeholder?: string;
   onConfirm: () => void;
 }) {
   const [pwd, setPwd] = React.useState("");
@@ -55,7 +60,7 @@ export function StepUpPasswordDialog({
   }, [open]);
 
   const confirm = () => {
-    if (pwd !== STORE_PASSWORD) {
+    if (pwd !== password) {
       setErr("Wrong password");
       return;
     }
@@ -73,7 +78,7 @@ export function StepUpPasswordDialog({
         <Input
           autoFocus
           type="password"
-          placeholder="Enter shop password"
+          placeholder={placeholder}
           value={pwd}
           onChange={(e) => {
             setPwd(e.target.value);

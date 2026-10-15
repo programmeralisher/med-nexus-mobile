@@ -267,7 +267,7 @@ export function LedgerScreen({
         </table>
       </div>
 
-      <div className="sticky bottom-0 mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg">
+      <div className="sticky bottom-[var(--bottom-nav-h,4.5rem)] z-10 mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-lg">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">Total amount</p>
           <p className="truncate text-2xl font-black text-foreground">{fmtMoney(total)}</p>
