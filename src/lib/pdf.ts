@@ -22,9 +22,21 @@ const header = (doc: jsPDF, title: string, sub?: string) => {
   }
 };
 
-export type Period = "daily" | "monthly" | "yearly";
+export type Period = "daily" | "monthly" | "yearly" | "all" | "custom";
+
+/** Inclusive calendar range for a custom PDF, as "YYYY-MM-DD" (what <input type="date"> gives). */
+export interface PdfRange {
+  from: string;
+  to: string;
+}
+
+const inRange = (iso: string, r: PdfRange) => {
+  const t = new Date(iso).getTime();
+  return t >= new Date(`${r.from}T00:00:00`).getTime() && t <= new Date(`${r.to}T23:59:59.999`).getTime();
+};
 
 const inPeriod = (iso: string, period: Period) => {
+  if (period === "all" || period === "custom") return true; // custom is narrowed by inRange below
   const d = new Date(iso);
   const now = new Date();
   if (period === "daily") return d.toDateString() === now.toDateString();
@@ -32,13 +44,19 @@ const inPeriod = (iso: string, period: Period) => {
   return d.getFullYear() === now.getFullYear();
 };
 
-export async function downloadLedgerPdf(c: Customer, period: Period) {
+export async function downloadLedgerPdf(c: Customer, period: Period, range?: PdfRange) {
+  const custom = period === "custom" && range ? range : null;
   const doc = new jsPDF();
-  header(doc, `Ledger: ${c.name}`, `${c.contact || "no contact"} · ${period} report`);
-  const rows = c.entries
-    .filter((e) => inPeriod(e.date, period))
-    .sort((a, b) => +new Date(a.date) - +new Date(b.date))
-    .map((e, i) => [
+  const label = custom
+    ? `${fmtDate(`${custom.from}T00:00:00`)} to ${fmtDate(`${custom.to}T00:00:00`)}`
+    : period === "all"
+      ? "all-time report"
+      : `${period} report`;
+  header(doc, `Ledger: ${c.name}`, `${c.contact || "no contact"} · ${label}`);
+  const picked = c.entries
+    .filter((e) => inPeriod(e.date, period) && (!custom || inRange(e.date, custom)))
+    .sort((a, b) => +new Date(a.date) - +new Date(b.date));
+  const rows = picked.map((e, i) => [
       String(i + 1),
       e.type === "payment" ? `Payment - ${e.description || "received"}` : e.description,
       (e.type === "payment" ? "- " : "") + fmtMoney(e.amount),
@@ -53,8 +71,17 @@ export async function downloadLedgerPdf(c: Customer, period: Period) {
   });
   const y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
   doc.setFontSize(12);
-  doc.text(`Total outstanding: ${fmtMoney(balanceOf(c))}`, 14, y);
-  await saveOrSharePdf(doc, `${c.name.replace(/\s+/g, "-")}-${period}.pdf`);
+  if (custom) {
+    const bought = picked.filter((e) => e.type !== "payment").reduce((a, e) => a + e.amount, 0);
+    const paid = picked.filter((e) => e.type === "payment").reduce((a, e) => a + e.amount, 0);
+    doc.text(`Purchases in this range: ${fmtMoney(bought)}`, 14, y);
+    doc.text(`Payments in this range: ${fmtMoney(paid)}`, 14, y + 7);
+    doc.text(`Total outstanding (all time): ${fmtMoney(balanceOf(c))}`, 14, y + 14);
+  } else {
+    doc.text(`Total outstanding: ${fmtMoney(balanceOf(c))}`, 14, y);
+  }
+  const fileTag = custom ? `${custom.from}_to_${custom.to}` : period;
+  await saveOrSharePdf(doc, `${c.name.replace(/\s+/g, "-")}-${fileTag}.pdf`);
 }
 
 export async function downloadReportsPdf(customers: Customer[]) {

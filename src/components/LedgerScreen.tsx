@@ -67,6 +67,14 @@ export function LedgerScreen({
   // currently pending, rather than one dialog per row.
   const [deleteEntryId, setDeleteEntryId] = React.useState<string | null>(null);
   const [defaulterConfirmOpen, setDefaulterConfirmOpen] = React.useState(false);
+  // Custom PDF range (used when the PDF dropdown is on "Custom range").
+  const toInputDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [pdfFrom, setPdfFrom] = React.useState(() => {
+    const n = new Date();
+    return toInputDate(new Date(n.getFullYear(), n.getMonth(), 1));
+  });
+  const [pdfTo, setPdfTo] = React.useState(() => toInputDate(new Date()));
 
   if (!customer) return null;
   const c: Customer = customer;
@@ -209,11 +217,50 @@ export function LedgerScreen({
               <SelectItem value="daily">Daily</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
               <SelectItem value="yearly">Yearly</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+              <SelectItem value="custom">Custom range</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => downloadLedgerPdf(c, period)}>
+          {period === "custom" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                From
+                <Input
+                  type="date"
+                  value={pdfFrom}
+                  max={pdfTo || undefined}
+                  onChange={(e) => setPdfFrom(e.target.value)}
+                  className="h-9 w-36"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                To
+                <Input
+                  type="date"
+                  value={pdfTo}
+                  min={pdfFrom || undefined}
+                  onChange={(e) => setPdfTo(e.target.value)}
+                  className="h-9 w-36"
+                />
+              </label>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            disabled={period === "custom" && (!pdfFrom || !pdfTo || pdfFrom > pdfTo)}
+            onClick={() =>
+              downloadLedgerPdf(
+                c,
+                period,
+                period === "custom" ? { from: pdfFrom, to: pdfTo } : undefined,
+              )
+            }
+          >
             <Download className="h-4 w-4" /> PDF
           </Button>
+          {period === "custom" && pdfFrom && pdfTo && pdfFrom > pdfTo && (
+            <p className="w-full text-xs text-destructive">"From" date must be before "To" date.</p>
+          )}
           {c.defaulter ? (
             <Button variant="outline" onClick={() => store.unmarkDefaulter(c.id)}>
               <Undo2 className="h-4 w-4" /> Undo defaulter
