@@ -18,7 +18,13 @@ import {
 import { balanceOf, fmtDate, fmtMoney, type Customer, type Store } from "@/lib/store";
 import { downloadLedgerPdf, type Period } from "@/lib/pdf";
 import { StepUpPasswordDialog } from "@/components/StepUpPasswordDialog";
-import { ArrowLeft, Download, Plus, Trash2, Undo2, UserX } from "lucide-react";
+import { ArrowLeft, ChevronRight, Download, Plus, Trash2, Undo2, UserX } from "lucide-react";
+
+/** "2026-09" -- local calendar month of an ISO date. Used to wrap entries by month. */
+const monthKey = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
 
 export function LedgerScreen({
   store,
@@ -36,6 +42,10 @@ export function LedgerScreen({
   const [desc, setDesc] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [period, setPeriod] = React.useState<Period>("monthly");
+  // Which months the user has opened/closed by hand. Anything not in here
+  // follows the default: only the newest month is open, older months are
+  // wrapped -- so when a new month starts, the previous one folds up by itself.
+  const [monthOpen, setMonthOpen] = React.useState<Record<string, boolean>>({});
 
   // Local, uncommitted edits for the inline description/amount inputs below.
   // Keyed by entry id. While a draft exists for a field, the input shows the
@@ -63,6 +73,54 @@ export function LedgerScreen({
   const entries = [...c.entries].sort((a, b) => +new Date(a.date) - +new Date(b.date));
   const total = balanceOf(c);
 
+  // Monthly wrappers. S.No stays the position in the whole ledger (i + 1), so
+  // numbers never change when a month is folded or opened.
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      label: string;
+      monthName: string;
+      items: number;
+      purchases: number;
+      payments: number;
+      paid: number;
+      firstIndex: number;
+    }
+  >();
+  entries.forEach((e, i) => {
+    const key = monthKey(e.date);
+    let g = groups.get(key);
+    if (!g) {
+      const d = new Date(e.date);
+      g = {
+        key,
+        label: d.toLocaleString("en-GB", { month: "long", year: "numeric" }),
+        monthName: d.toLocaleString("en-GB", { month: "long" }),
+        items: 0,
+        purchases: 0,
+        payments: 0,
+        paid: 0,
+        firstIndex: i,
+      };
+      groups.set(key, g);
+    }
+    if (e.type === "payment") {
+      g.payments += 1;
+      g.paid += e.amount;
+    } else {
+      g.items += 1;
+      g.purchases += e.amount;
+    }
+  });
+  const lastEntry = entries[entries.length - 1];
+  const latestKey = lastEntry ? monthKey(lastEntry.date) : "";
+  const isOpen = (key: string) => monthOpen[key] ?? key === latestKey;
+  const toggleMonth = (key: string) => setMonthOpen((m) => ({ ...m, [key]: !isOpen(key) }));
+  // New entries always land in the current month: make sure it is visible.
+  const openCurrentMonth = () =>
+    setMonthOpen((m) => ({ ...m, [monthKey(new Date().toISOString())]: true }));
+
   const addItem = () => {
     const amt = Number(amount);
     if (!desc.trim() || !Number.isFinite(amt) || amt <= 0) return;
@@ -74,6 +132,7 @@ export function LedgerScreen({
     });
     setDesc("");
     setAmount("");
+    openCurrentMonth();
   };
 
   const recordPayment = () => {
@@ -92,6 +151,7 @@ export function LedgerScreen({
     setPayAmount("");
     setPayNote("");
     setPayOpen(false);
+    openCurrentMonth();
   };
 
   // Committed on blur / Enter, not on every keystroke -- see the comment on
@@ -189,6 +249,21 @@ export function LedgerScreen({
         </Button>
       </div>
 
+      {groups.size > 1 && (
+        <div className="mt-3 flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMonthOpen(Object.fromEntries([...groups.keys()].map((k) => [k, true])))}
+          >
+            Expand all months
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setMonthOpen({})}>
+            Wrap old months
+          </Button>
+        </div>
+      )}
+
       <div className="mt-4 flex-1 overflow-auto rounded-2xl border border-border">
         <table className="w-full min-w-[520px] text-sm">
           <thead className="sticky top-0 bg-secondary text-secondary-foreground">
@@ -208,61 +283,107 @@ export function LedgerScreen({
                 </td>
               </tr>
             )}
-            {entries.map((e, i) => (
-              <React.Fragment key={e.id}>
-              <tr className="border-t border-border">
-                <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
-                <td className="px-3 py-1.5">
-                  <input
-                    className="w-full rounded bg-transparent px-1 py-1 outline-none focus:bg-accent"
-                    value={descDrafts[e.id] ?? e.description}
-                    onChange={(ev) => setDescDrafts((d) => ({ ...d, [e.id]: ev.target.value }))}
-                    onBlur={(ev) => commitDescription(e.id, ev.target.value)}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter") ev.currentTarget.blur();
-                    }}
-                  />
-                </td>
-                <td className="px-3 py-1.5 text-right">
-                  <input
-                    className={
-                      "w-24 rounded bg-transparent px-1 py-1 text-right outline-none focus:bg-accent " +
-                      (e.type === "payment" ? "text-success" : "")
-                    }
-                    value={amountDrafts[e.id] ?? String(e.amount)}
-                    inputMode="numeric"
-                    onChange={(ev) => setAmountDrafts((d) => ({ ...d, [e.id]: ev.target.value }))}
-                    onBlur={(ev) => commitAmount(e.id, ev.target.value)}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter") ev.currentTarget.blur();
-                    }}
-                  />
-                  {e.type === "payment" && <span className="ml-1 text-xs text-success">paid</span>}
-                </td>
-                <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
-                  {fmtDate(e.date)}
-                </td>
-                <td className="px-2">
-                  <button
-                    onClick={() => setDeleteEntryId(e.id)}
-                    className="text-muted-foreground hover:text-destructive"
-                    aria-label="Erase entry"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-              {e.type === "payment" && e.balanceBefore !== undefined && (
-                <tr className="border-t border-border/50 bg-success/5">
-                  <td />
-                  <td colSpan={4} className="px-3 pb-1.5 text-xs font-medium text-success">
-                    Balance: {fmtMoney(e.balanceBefore)}, Paid: {fmtMoney(e.amount)}, Remaining:{" "}
-                    {fmtMoney(e.balanceBefore - e.amount)}
-                  </td>
-                </tr>
-              )}
-              </React.Fragment>
-            ))}
+            {entries.map((e, i) => {
+              const key = monthKey(e.date);
+              const g = groups.get(key)!;
+              const open = isOpen(key);
+              return (
+                <React.Fragment key={e.id}>
+                  {g.firstIndex === i && (
+                    <tr className="border-t border-border bg-secondary/40">
+                      <td colSpan={5} className="p-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleMonth(key)}
+                          aria-expanded={open}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-accent"
+                        >
+                          <ChevronRight
+                            className={
+                              "h-4 w-4 shrink-0 transition-transform " + (open ? "rotate-90" : "")
+                            }
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold text-foreground">
+                              {g.label}
+                            </span>
+                            <span className="block text-xs text-muted-foreground">
+                              {open ? "Hide" : "See"} {g.monthName} purchases · {g.items}{" "}
+                              {g.items === 1 ? "item" : "items"}
+                              {g.payments > 0 && ` · Paid ${fmtMoney(g.paid)}`}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-sm font-semibold text-foreground">
+                            {fmtMoney(g.purchases)}
+                          </span>
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {open && (
+                    <>
+                      <tr className="border-t border-border">
+                        <td className="px-3 py-1.5 text-muted-foreground">{i + 1}</td>
+                        <td className="px-3 py-1.5">
+                          <input
+                            className="w-full rounded bg-transparent px-1 py-1 outline-none focus:bg-accent"
+                            value={descDrafts[e.id] ?? e.description}
+                            onChange={(ev) =>
+                              setDescDrafts((d) => ({ ...d, [e.id]: ev.target.value }))
+                            }
+                            onBlur={(ev) => commitDescription(e.id, ev.target.value)}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") ev.currentTarget.blur();
+                            }}
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input
+                            className={
+                              "w-24 rounded bg-transparent px-1 py-1 text-right outline-none focus:bg-accent " +
+                              (e.type === "payment" ? "text-success" : "")
+                            }
+                            value={amountDrafts[e.id] ?? String(e.amount)}
+                            inputMode="numeric"
+                            onChange={(ev) =>
+                              setAmountDrafts((d) => ({ ...d, [e.id]: ev.target.value }))
+                            }
+                            onBlur={(ev) => commitAmount(e.id, ev.target.value)}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") ev.currentTarget.blur();
+                            }}
+                          />
+                          {e.type === "payment" && (
+                            <span className="ml-1 text-xs text-success">paid</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
+                          {fmtDate(e.date)}
+                        </td>
+                        <td className="px-2">
+                          <button
+                            onClick={() => setDeleteEntryId(e.id)}
+                            className="text-muted-foreground hover:text-destructive"
+                            aria-label="Erase entry"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      {e.type === "payment" && e.balanceBefore !== undefined && (
+                        <tr className="border-t border-border/50 bg-success/5">
+                          <td />
+                          <td colSpan={4} className="px-3 pb-1.5 text-xs font-medium text-success">
+                            Balance: {fmtMoney(e.balanceBefore)}, Paid: {fmtMoney(e.amount)},
+                            Remaining: {fmtMoney(e.balanceBefore - e.amount)}
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
